@@ -17,7 +17,8 @@ from typing import Optional
 import requests
 
 import config
-from src.content.generator import GeneratedContent, build_instagram_caption
+from src.content.models import GeneratedContent
+from src.content.generator import build_instagram_caption
 
 logger = logging.getLogger(__name__)
 

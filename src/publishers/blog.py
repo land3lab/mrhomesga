@@ -11,7 +11,7 @@ from pathlib import Path
 import requests
 
 import config
-from src.content.generator import GeneratedContent
+from src.content.models import GeneratedContent
 
 logger = logging.getLogger(__name__)
 
