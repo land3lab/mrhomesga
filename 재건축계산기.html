@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>재건축 계산기 | Mr. Homes</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      min-height: 100vh;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+      color: #fff;
+      padding: 32px 24px 28px;
+      text-align: center;
+    }
+    header h1 { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.5px; }
+    header p  { margin-top: 8px; font-size: 0.88rem; opacity: 0.75; }
+
+    nav {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 18px 24px;
+      background: #fff;
+      border-bottom: 1px solid #e8eaed;
+      flex-wrap: wrap;
+    }
+    nav button {
+      padding: 9px 20px;
+      border: 2px solid #e0e0e0;
+      border-radius: 24px;
+      background: #fff;
+      color: #555;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    nav button.active, nav button:hover {
+      background: #0f3460;
+      border-color: #0f3460;
+      color: #fff;
+    }
+
+    main {
+      max-width: 720px;
+      margin: 28px auto;
+      padding: 0 16px 60px;
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px 24px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    }
+    .card h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #0f3460;
+      margin-bottom: 6px;
+    }
+    .card .desc {
+      font-size: 0.82rem;
+      color: #888;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+
+    .form-group { margin-bottom: 16px; }
+    label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 6px;
+    }
+    label .unit { font-weight: 400; color: #999; margin-left: 4px; }
+
+    input[type="number"], input[type="text"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color .2s;
+      -moz-appearance: textfield;
+    }
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    input:focus { border-color: #0f3460; }
+
+    .btn-calc {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #0f3460, #1a5276);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity .2s;
+    }
+    .btn-calc:hover { opacity: 0.88; }
+    .btn-calc:active { opacity: 0.75; }
+
+    .result-box {
+      margin-top: 20px;
+      background: #f7f9fc;
+      border: 1.5px solid #d0d9e8;
+      border-radius: 12px;
+      padding: 20px;
+      display: none;
+    }
+    .result-box.show { display: block; }
+    .result-box h3 { font-size: 0.85rem; color: #777; margin-bottom: 14px; }
+
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 9px 0;
+      border-bottom: 1px dashed #e0e8f0;
+      font-size: 0.9rem;
+    }
+    .result-row:last-child { border-bottom: none; }
+    .result-row .label { color: #555; }
+    .result-row .value { font-weight: 700; color: #0f3460; }
+    .result-row.highlight .value { color: #c0392b; font-size: 1.1rem; }
+
+    .info-box {
+      background: #eff6ff;
+      border-left: 4px solid #3b82f6;
+      border-radius: 0 8px 8px 0;
+      padding: 12px 16px;
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: #1e40af;
+      line-height: 1.7;
+    }
+
+    .formula-box {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+      font-size: 0.8rem;
+      color: #555;
+      line-height: 1.8;
+    }
+    .formula-box strong { color: #0f3460; }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 480px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    .step-badge {
+      display: inline-block;
+      background: #0f3460;
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .tax-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      margin-top: 12px;
+    }
+    .tax-table th {
+      background: #0f3460;
+      color: #fff;
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .tax-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid #eee;
+      text-align: center;
+    }
+    .tax-table tr:hover td { background: #f0f4fa; }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 0.78rem;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🏗️ 재건축 계산기</h1>
+  <p>비례율 · 권리가액 · 조합원분담금 · 초과이익환수금</p>
+</header>
+
+<nav>
+  <button class="active" onclick="switchTab('proportional')">비례율 / 권리가액</button>
+  <button onclick="switchTab('contribution')">조합원 분담금</button>
+  <button onclick="switchTab('levy')">초과이익 환수금</button>
+  <button onclick="switchTab('guide')">용어 설명</button>
+</nav>
+
+<main>
+
+  <!-- ① 비례율 / 권리가액 -->
+  <div id="tab-proportional" class="tab-panel active">
+    <div class="card">
+      <h2>비례율 계산</h2>
+      <p class="desc">비례율 = (총수입 − 총사업비) ÷ 종전 토지·건물 총감정가 × 100</p>
+      <div class="formula-box">
+        <strong>총수입</strong> = 일반분양 수입 + 임대분양 수입 + 기타 수입<br>
+        <strong>총사업비</strong> = 공사비 + 설계·감리비 + 금융비용 + 기타 비용<br>
+        <strong>종전 총감정가</strong> = 조합원 소유 토지·건물의 감정평가 총액
+      </div>
+      <div class="two-col">
+        <div class="form-group">
+          <label>일반분양 수입 <span class="unit">(만원)</span></label>
+          <input type="number" id="p_revenue_general" placeholder="예: 500000" />
+        </div>
+        <div class="form-group">
+          <label>기타 수입 <span class="unit">(만원)</span></label>
+          <input type="number" id="p_revenue_other" placeholder="예: 10000" />
+        </div>
+        <div class="form-group">
+          <label>총 사업비 <span class="unit">(만원)</span></label>
+          <input type="number" id="p_cost" placeholder="예: 300000" />
+        </div>
+        <div class="form-group">
+          <label>종전 총감정가 <span class="unit">(만원)</span></label>
+          <input type="number" id="p_appraised" placeholder="예: 200000" />
+        </div>
+      </div>
+      <button class="btn-calc" onclick="calcProportional()">비례율 계산하기</button>
+      <div id="result-proportional" class="result-box">
+        <h3>📊 계산 결과</h3>
+        <div class="result-row">
+          <span class="label">총수입</span>
+          <span class="value" id="r_p_revenue"></span>
+        </div>
+        <div class="result-row">
+          <span class="label">총사업비</span>
+          <span class="value" id="r_p_cost"></span>
+        </div>
+        <div class="result-row">
+          <span class="label">사업 이익</span>
+          <span class="value" id="r_p_profit"></span>
+        </div>
+        <div class="result-row highlight">
+          <span class="label">비례율</span>
+          <span class="value" id="r_p_ratio"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>권리가액 계산</h2>
+      <p class="desc">권리가액 = 내 종전 감정가 × 비례율<br>내가 새 아파트를 받을 수 있는 기준 금액입니다.</p>
+      <div class="two-col">
+        <div class="form-group">
+          <label>내 종전 감정가 <span class="unit">(만원)</span></label>
+          <input type="number" id="r_my_appraised" placeholder="예: 30000" />
+        </div>
+        <div class="form-group">
+          <label>비례율 <span class="unit">(%)</span></label>
+          <input type="number" id="r_ratio_input" placeholder="예: 110" />
+        </div>
+      </div>
+      <button class="btn-calc" onclick="calcRightValue()">권리가액 계산하기</button>
+      <div id="result-rightvalue" class="result-box">
+        <h3>📊 계산 결과</h3>
+        <div class="result-row highlight">
+          <span class="label">권리가액</span>
+          <span class="value" id="r_rightvalue"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ② 조합원 분담금 -->
+  <div id="tab-contribution" class="tab-panel">
+    <div class="card">
+      <h2>조합원 분담금 계산</h2>
+      <p class="desc">
+        분담금 = 내가 받는 새 아파트 조합원 분양가 − 권리가액<br>
+        <strong style="color:#c0392b">분담금이 양수(+)</strong>이면 추가 납부,
+        <strong style="color:#27ae60">음수(−)</strong>이면 환급을 받습니다.
+      </p>
+      <div class="formula-box">
+        <strong>Step 1</strong> 권리가액 = 내 종전 감정가 × 비례율<br>
+        <strong>Step 2</strong> 분담금 = 조합원 분양가 − 권리가액
+      </div>
+      <div class="form-group">
+        <label><span class="step-badge">1</span>내 종전 감정가 <span class="unit">(만원)</span></label>
+        <input type="number" id="c_appraised" placeholder="예: 30000" />
+      </div>
+      <div class="form-group">
+        <label><span class="step-badge">2</span>비례율 <span class="unit">(%)</span></label>
+        <input type="number" id="c_ratio" placeholder="예: 110" />
+      </div>
+      <div class="form-group">
+        <label><span class="step-badge">3</span>조합원 분양가 <span class="unit">(만원)</span></label>
+        <input type="number" id="c_sale_price" placeholder="예: 45000" />
+      </div>
+      <button class="btn-calc" onclick="calcContribution()">분담금 계산하기</button>
+      <div id="result-contribution" class="result-box">
+        <h3>📊 계산 결과</h3>
+        <div class="result-row">
+          <span class="label">권리가액</span>
+          <span class="value" id="r_c_rightvalue"></span>
+        </div>
+        <div class="result-row">
+          <span class="label">조합원 분양가</span>
+          <span class="value" id="r_c_sale"></span>
+        </div>
+        <div class="result-row highlight">
+          <span class="label">조합원 분담금</span>
+          <span class="value" id="r_c_contribution"></span>
+        </div>
+        <div id="r_c_comment" class="info-box"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ 초과이익 환수금 -->
+  <div id="tab-levy" class="tab-panel">
+    <div class="card">
+      <h2>재건축 초과이익 환수금</h2>
+      <p class="desc">
+        재건축 초과이익 환수제(재초환)는 재건축으로 조합원 1인당 평균이익이
+        3,000만 원을 초과할 경우 초과분에 세금을 부과하는 제도입니다.
+      </p>
+
+      <div class="formula-box">
+        <strong>초과이익</strong> = 완료시점 주택가격 − 개시시점 주택가격 − 정상주택가격상승분 − 개발비용<br>
+        <strong>부과액</strong> = 조합원 1인당 초과이익 × 부과율
+      </div>
+
+      <div class="form-group">
+        <label>완료시점 주택가격 <span class="unit">(만원)</span></label>
+        <input type="number" id="l_end_price" placeholder="예: 90000" />
+      </div>
+      <div class="form-group">
+        <label>개시시점 주택가격 <span class="unit">(만원)</span></label>
+        <input type="number" id="l_start_price" placeholder="예: 40000" />
+      </div>
+      <div class="form-group">
+        <label>정상주택가격 상승분 <span class="unit">(만원)</span></label>
+        <input type="number" id="l_normal_rise" placeholder="예: 8000 (개시시점가 × 정기예금이율 × 사업기간)" />
+      </div>
+      <div class="form-group">
+        <label>개발비용 <span class="unit">(만원)</span></label>
+        <input type="number" id="l_dev_cost" placeholder="예: 12000" />
+      </div>
+      <div class="form-group">
+        <label>조합원 수 <span class="unit">(명)</span></label>
+        <input type="number" id="l_members" placeholder="예: 500" />
+      </div>
+      <button class="btn-calc" onclick="calcLevy()">환수금 계산하기</button>
+      <div id="result-levy" class="result-box">
+        <h3>📊 계산 결과</h3>
+        <div class="result-row">
+          <span class="label">총 초과이익</span>
+          <span class="value" id="r_l_total_excess"></span>
+        </div>
+        <div class="result-row">
+          <span class="label">1인당 초과이익</span>
+          <span class="value" id="r_l_per_person"></span>
+        </div>
+        <div class="result-row">
+          <span class="label">적용 부과율</span>
+          <span class="value" id="r_l_rate"></span>
+        </div>
+        <div class="result-row highlight">
+          <span class="label">1인당 환수금</span>
+          <span class="value" id="r_l_levy"></span>
+        </div>
+        <div id="r_l_comment" class="info-box"></div>
+      </div>
+
+      <h3 style="margin-top:24px; font-size:0.9rem; color:#444;">부과율 기준표 (2024년 개정)</h3>
+      <table class="tax-table">
+        <thead>
+          <tr>
+            <th>1인당 초과이익</th>
+            <th>부과율</th>
+            <th>비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>3,000만원 이하</td><td>면제</td><td>—</td></tr>
+          <tr><td>3,000만원 초과 ~ 5,000만원 이하</td><td>10%</td><td></td></tr>
+          <tr><td>5,000만원 초과 ~ 7,000만원 이하</td><td>20%</td><td></td></tr>
+          <tr><td>7,000만원 초과 ~ 9,000만원 이하</td><td>30%</td><td></td></tr>
+          <tr><td>9,000만원 초과 ~ 1억 1,000만원 이하</td><td>40%</td><td></td></tr>
+          <tr><td>1억 1,000만원 초과</td><td>50%</td><td>최고세율</td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:0.75rem; color:#aaa; margin-top:8px;">※ 2024년 재건축 초과이익환수법 개정 기준 (면제금액 3,000만원 상향)</p>
+    </div>
+  </div>
+
+  <!-- ④ 용어 설명 -->
+  <div id="tab-guide" class="tab-panel">
+    <div class="card">
+      <h2>📖 재건축 핵심 용어</h2>
+      <p class="desc">처음이라면 꼭 읽어보세요.</p>
+
+      <div style="display:flex; flex-direction:column; gap:16px; margin-top:8px;">
+        <div class="info-box" style="background:#f0fdf4; border-color:#22c55e; color:#166534;">
+          <strong>비례율</strong><br>
+          재건축 사업의 수익성 지표. 100%면 손익분기, 100% 초과면 수익, 미만이면 손해.
+          조합원 권리가액 계산의 핵심.
+        </div>
+        <div class="info-box" style="background:#eff6ff; border-color:#3b82f6; color:#1e40af;">
+          <strong>권리가액</strong><br>
+          내가 가진 종전 토지·건물에 비례율을 곱한 금액. 새 아파트를 받을 때
+          이 금액만큼은 '이미 낸 것'으로 인정받는다.
+        </div>
+        <div class="info-box" style="background:#fefce8; border-color:#eab308; color:#854d0e;">
+          <strong>조합원 분담금</strong><br>
+          새 아파트 조합원 분양가에서 권리가액을 뺀 금액. 플러스면 추가 납부,
+          마이너스면 돌려받는다.
+        </div>
+        <div class="info-box" style="background:#fdf2f8; border-color:#d946ef; color:#701a75;">
+          <strong>종전 감정가</strong><br>
+          재건축 사업 인가 이후 감정평가법인이 평가한 기존 토지·건물의 시장가치.
+          비례율 계산과 권리가액 산정의 기준이 된다.
+        </div>
+        <div class="info-box" style="background:#fff7ed; border-color:#f97316; color:#9a3412;">
+          <strong>재초환 (재건축 초과이익 환수)</strong><br>
+          재건축으로 얻은 이익이 너무 크면 초과분을 과세하는 제도. 1인당 이익이
+          3,000만원을 초과하면 10~50% 세율이 적용된다.
+        </div>
+        <div class="info-box">
+          <strong>일반분양 vs 조합원분양</strong><br>
+          일반분양은 외부인에게 분양해 사업비를 충당. 조합원분양은 기존 주민이
+          받는 물량으로 조합원 분양가는 일반분양가보다 저렴한 것이 일반적.
+        </div>
+      </div>
+
+      <div style="margin-top:24px; padding:16px; background:#fff3cd; border-radius:10px; font-size:0.8rem; color:#856404; line-height:1.7;">
+        ⚠️ <strong>주의사항</strong><br>
+        본 계산기는 참고용으로 제공됩니다. 실제 재건축 사업의 비례율, 분담금, 환수금은
+        조합, 감정평가법인, 세무사 등 전문가의 공식 자료를 기준으로 하며, 이 결과와
+        다를 수 있습니다.
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>Mr. Homes · 재건축 계산기 · 참고용 제공</footer>
+
+<script>
+  function switchTab(id) {
+    document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    event.target.classList.add('active');
+  }
+
+  function fmt(n) {
+    if (Math.abs(n) >= 10000) {
+      const eok = n / 10000;
+      return eok.toLocaleString('ko-KR', {maximumFractionDigits: 2}) + '억원';
+    }
+    return n.toLocaleString('ko-KR') + '만원';
+  }
+
+  function fmtPct(n) { return n.toFixed(2) + '%'; }
+
+  // ① 비례율
+  function calcProportional() {
+    const revenue = (parseFloat(document.getElementById('p_revenue_general').value) || 0)
+                  + (parseFloat(document.getElementById('p_revenue_other').value) || 0);
+    const cost     = parseFloat(document.getElementById('p_cost').value) || 0;
+    const appraised = parseFloat(document.getElementById('p_appraised').value) || 0;
+
+    if (!appraised || !revenue) { alert('총수입과 종전 총감정가를 입력해주세요.'); return; }
+
+    const profit = revenue - cost;
+    const ratio  = (profit / appraised) * 100;
+
+    document.getElementById('r_p_revenue').textContent = fmt(revenue);
+    document.getElementById('r_p_cost').textContent    = fmt(cost);
+    document.getElementById('r_p_profit').textContent  = fmt(profit);
+    document.getElementById('r_p_ratio').textContent   = fmtPct(ratio);
+    document.getElementById('result-proportional').classList.add('show');
+  }
+
+  // ① 권리가액
+  function calcRightValue() {
+    const appraised = parseFloat(document.getElementById('r_my_appraised').value) || 0;
+    const ratio     = parseFloat(document.getElementById('r_ratio_input').value) || 0;
+
+    if (!appraised || !ratio) { alert('감정가와 비례율을 입력해주세요.'); return; }
+
+    const rv = appraised * (ratio / 100);
+    document.getElementById('r_rightvalue').textContent = fmt(rv);
+    document.getElementById('result-rightvalue').classList.add('show');
+  }
+
+  // ② 분담금
+  function calcContribution() {
+    const appraised  = parseFloat(document.getElementById('c_appraised').value) || 0;
+    const ratio      = parseFloat(document.getElementById('c_ratio').value) || 0;
+    const salePrice  = parseFloat(document.getElementById('c_sale_price').value) || 0;
+
+    if (!appraised || !ratio || !salePrice) { alert('모든 항목을 입력해주세요.'); return; }
+
+    const rightValue   = appraised * (ratio / 100);
+    const contribution = salePrice - rightValue;
+
+    document.getElementById('r_c_rightvalue').textContent = fmt(rightValue);
+    document.getElementById('r_c_sale').textContent       = fmt(salePrice);
+
+    const cvEl = document.getElementById('r_c_contribution');
+    cvEl.textContent = (contribution >= 0 ? '+' : '') + fmt(contribution);
+    cvEl.style.color = contribution >= 0 ? '#c0392b' : '#27ae60';
+
+    const comment = document.getElementById('r_c_comment');
+    if (contribution > 0) {
+      comment.innerHTML = `<strong>추가 납부 필요</strong><br>조합원 분양가가 권리가액보다 <strong>${fmt(contribution)}</strong> 높습니다.<br>입주 전까지 이 금액을 조합에 납부해야 합니다.`;
+      comment.style.cssText = 'background:#fff5f5; border-color:#fc8181; color:#9b2c2c;';
+    } else if (contribution < 0) {
+      comment.innerHTML = `<strong>환급 예정</strong><br>권리가액이 조합원 분양가보다 <strong>${fmt(Math.abs(contribution))}</strong> 높습니다.<br>이 금액을 환급받을 수 있습니다.`;
+      comment.style.cssText = 'background:#f0fff4; border-color:#68d391; color:#276749;';
+    } else {
+      comment.innerHTML = `권리가액과 분양가가 정확히 일치합니다.`;
+      comment.style.cssText = '';
+    }
+    comment.style.display = 'block';
+    document.getElementById('result-contribution').classList.add('show');
+  }
+
+  // ③ 초과이익 환수
+  function calcLevy() {
+    const endPrice    = parseFloat(document.getElementById('l_end_price').value) || 0;
+    const startPrice  = parseFloat(document.getElementById('l_start_price').value) || 0;
+    const normalRise  = parseFloat(document.getElementById('l_normal_rise').value) || 0;
+    const devCost     = parseFloat(document.getElementById('l_dev_cost').value) || 0;
+    const members     = parseFloat(document.getElementById('l_members').value) || 0;
+
+    if (!endPrice || !startPrice || !members) { alert('완료시점 가격, 개시시점 가격, 조합원 수를 입력해주세요.'); return; }
+
+    const totalExcess = endPrice - startPrice - normalRise - devCost;
+    const perPerson   = totalExcess / members;
+
+    let rate = 0, levy = 0;
+    const p = perPerson;
+    const bands = [
+      { limit: 3000,  rate: 0    },
+      { limit: 5000,  rate: 0.10 },
+      { limit: 7000,  rate: 0.20 },
+      { limit: 9000,  rate: 0.30 },
+      { limit: 11000, rate: 0.40 },
+      { limit: Infinity, rate: 0.50 },
+    ];
+    if (p <= 3000) {
+      rate = 0; levy = 0;
+    } else {
+      // 누진 적용 아님 — 단일 세율 적용 방식 (재초환은 전체 초과분에 단일세율)
+      for (let i = 1; i < bands.length; i++) {
+        if (p <= bands[i].limit) { rate = bands[i].rate; break; }
+      }
+      levy = (p - 3000) * rate;
+    }
+
+    document.getElementById('r_l_total_excess').textContent = fmt(totalExcess);
+    document.getElementById('r_l_per_person').textContent   = fmt(perPerson);
+    document.getElementById('r_l_rate').textContent         = (rate * 100) + '%';
+    document.getElementById('r_l_levy').textContent         = fmt(levy);
+
+    const comment = document.getElementById('r_l_comment');
+    if (levy <= 0) {
+      comment.innerHTML = '1인당 초과이익이 3,000만원 이하여서 환수금이 없습니다.';
+      comment.style.cssText = 'background:#f0fff4; border-color:#68d391; color:#276749; display:block;';
+    } else {
+      comment.innerHTML = `1인당 <strong>${fmt(perPerson)}</strong>의 초과이익 중<br>3,000만원 초과분 <strong>${fmt(perPerson - 3000)}</strong>에 <strong>${rate*100}%</strong> 세율을 적용해<br><strong>${fmt(levy)}</strong>를 환수합니다.`;
+      comment.style.cssText = 'background:#fff5f5; border-color:#fc8181; color:#9b2c2c; display:block;';
+    }
+    document.getElementById('result-levy').classList.add('show');
+  }
+</script>
+</body>
+</html>
