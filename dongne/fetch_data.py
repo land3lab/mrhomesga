@@ -86,13 +86,14 @@ def recent_months(n: int) -> list[str]:
 
 def parse_items(xml_bytes: bytes) -> list[dict]:
     root = ET.fromstring(xml_bytes)
-    code = root.findtext(".//resultCode", "")
+    code = (root.findtext(".//resultCode", "") or "").strip()
     if code not in ("00", "000"):
-        msg = root.findtext(".//resultMsg", "unknown")
+        msg = (root.findtext(".//resultMsg", "unknown") or "").strip()
         raise RuntimeError(f"API 오류 [{code}] {msg}")
+    # 대부분의 data.go.kr API는 <item>을 쓰지만 행정표준코드 API는 <row>를 쓴다 — 둘 다 지원
     return [
         {el.tag: (el.text or "").strip() for el in item}
-        for item in root.iter("item")
+        for item in list(root.iter("item")) + list(root.iter("row"))
     ]
 
 
@@ -106,13 +107,14 @@ def resolve_lawd(umd: str, hint: str = "") -> str:
     query = f"{hint} {umd}".strip()
     xml = get(REGION_URL, {"locatadd_nm": query, "pageNo": 1, "numOfRows": 100, "type": "xml"})
     root = ET.fromstring(xml)
-    code = root.findtext(".//resultCode", "")
+    code = (root.findtext(".//resultCode", "") or "").strip()
     if code and code not in ("00", "000", "INFO-00"):
-        msg = root.findtext(".//resultMsg", "unknown")
+        msg = (root.findtext(".//resultMsg", "unknown") or "").strip()
         raise RuntimeError(f"법정동코드 조회 실패 [{code}] {msg}")
+    # 대부분의 data.go.kr API는 <item>을 쓰지만 행정표준코드 API는 <row>를 쓴다 — 둘 다 지원
     rows = [
         {el.tag: (el.text or "").strip() for el in item}
-        for item in root.iter("item")
+        for item in list(root.iter("item")) + list(root.iter("row"))
     ]
     # 주소의 마지막 단어가 umd와 정확히 일치하는 것만 채택 (부분 문자열 오탐 방지)
     hits = [r for r in rows if r.get("locatadd_nm", "").split()[-1:] == [umd]]
