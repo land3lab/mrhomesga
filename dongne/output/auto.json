@@ -1,0 +1,16 @@
+[
+  {
+    "name": "본오동",
+    "newAptName": "그랑시티자이",
+    "newAptPrice": 87000,
+    "newAptPy": 2837,
+    "dongAptName": "우성",
+    "dongAptPrice": 56000,
+    "dongAptPy": 1455,
+    "rebuildAptName": "월드",
+    "rebuildAptPrice": 47000,
+    "rebuildAptPy": 2592,
+    "stores": 3451,
+    "autoUpdatedAt": "2026-07-13"
+  }
+]
