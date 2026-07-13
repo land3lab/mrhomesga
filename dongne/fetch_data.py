@@ -44,18 +44,28 @@ try:  # 레포에 이미 있는 python-dotenv 활용 (없어도 동작)
 except ImportError:
     pass
 
-KEY = os.getenv("DATA_GO_KR_KEY", "")
+KEY = os.getenv("DATA_GO_KR_KEY", "").strip()
 
-TRADE_URL = "http://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
-RENT_URL = "http://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent"
-STORE_URL = "http://apis.data.go.kr/B553077/api/open/sdsc2/storeListInDong"
+TRADE_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
+RENT_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent"
+STORE_URL = "https://apis.data.go.kr/B553077/api/open/sdsc2/storeListInDong"
 PAGE = 1000  # 한 페이지 최대 행 수
 
 
 def get(url: str, params: dict) -> bytes:
-    qs = urllib.parse.urlencode({**params, "serviceKey": KEY})
-    with urllib.request.urlopen(f"{url}?{qs}", timeout=60) as r:
-        return r.read()
+    qs = urllib.parse.urlencode(params)
+    # Encoding 키(% 포함)는 이미 인코딩된 상태이므로 그대로 붙여 이중 인코딩을 피한다
+    key = KEY if "%" in KEY else urllib.parse.quote(KEY, safe="")
+    req = urllib.request.Request(
+        f"{url}?{qs}&serviceKey={key}",
+        headers={"User-Agent": "Mozilla/5.0 (dongne-analysis)"},  # 기본 UA는 WAF에 차단됨
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        body = e.read()[:300].decode("utf-8", "replace")
+        raise RuntimeError(f"HTTP {e.code} ({url.rsplit('/', 1)[-1]}): {body}") from None
 
 
 def recent_months(n: int) -> list[str]:
