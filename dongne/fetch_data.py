@@ -221,6 +221,10 @@ def build_region_index(sidos: list[str] | None = None) -> dict:
 
         for v in sido_map.values():
             v["umd"] = sorted(set(v["umd"]))
+        # 안산시/부천시/화성시처럼 구가 있는 시는 실제 읍/면/동이 전부 구 밑에 붙고,
+        # "안산시" 같은 상위 시 자체는 읍/면/동이 하나도 없는 빈 항목으로 남는다 —
+        # 선택해도 막다른 길이라 아예 뺀다.
+        sido_map = {name: v for name, v in sido_map.items() if v["umd"]}
         if sido_map:  # 완전히 실패해 비어 있으면 아예 안 넣는다 — 앱이 실시간 API로 폴백하도록
             index[sido] = sido_map
             print(f"  ✓ 시군구 {len(sido_map)}개")
