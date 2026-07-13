@@ -33,7 +33,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # workflow_run 이벤트의 head_sha는 dongne-auto.yml이 "시작될 때" 커밋을 가리켜서,
+          # 그 실행 도중 봇이 새로 커밋한 auto.json/region_index.json이 빠진다.
+          # 항상 브랜치 최신 커밋을 받도록 고정 브랜치명을 명시한다.
+          ref: claude/automate-news-posting-ChKWt
 
       # Pages Source가 "GitHub Actions"로 설정된 뒤 재실행됨
       - uses: actions/configure-pages@v5
