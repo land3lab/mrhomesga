@@ -144,43 +144,48 @@ def resolve_lawd(umd: str, hint: str = "") -> str:
 
 
 def _region_rows(locatadd_nm: str) -> list[dict]:
-    """법정동코드 API를 완전히 페이지 순회해 원본 행 전체를 반환."""
+    """법정동코드 API를 완전히 페이지 순회해 원본 행 전체를 반환.
+
+    페이지 도중 실패하면 그 시점까지 모은 행만 반환한다(부분 결과가
+    아예 없는 것보다 낫다) — 전체 시/도 하나를 통째로 날리지 않기 위함.
+    """
     rows: list[dict] = []
     page = 1
     while True:
-        xml = get(REGION_URL, {"locatadd_nm": locatadd_nm, "pageNo": page, "numOfRows": 1000, "type": "xml"})
-        root = ET.fromstring(xml)
-        code = (root.findtext(".//resultCode", "") or "").strip()
-        if code and code not in ("00", "000", "INFO-0", "INFO-00"):
-            msg = (root.findtext(".//resultMsg", "") or "").strip()
-            raise RuntimeError(f"법정동코드 조회 실패 [{code}] {msg}")
-        chunk = [
-            {el.tag: (el.text or "").strip() for el in item}
-            for item in list(root.iter("item")) + list(root.iter("row"))
-        ]
+        try:
+            xml = get(REGION_URL, {"locatadd_nm": locatadd_nm, "pageNo": page, "numOfRows": 1000, "type": "xml"})
+            root = ET.fromstring(xml)
+            code = (root.findtext(".//resultCode", "") or "").strip()
+            if code and code not in ("00", "000", "INFO-0", "INFO-00"):
+                msg = (root.findtext(".//resultMsg", "") or "").strip()
+                raise RuntimeError(f"법정동코드 조회 실패 [{code}] {msg}")
+            chunk = [
+                {el.tag: (el.text or "").strip() for el in item}
+                for item in list(root.iter("item")) + list(root.iter("row"))
+            ]
+            total = int((root.findtext(".//totalCount", "0") or "0").strip() or 0)
+        except Exception as e:
+            print(f"    ⚠ '{locatadd_nm}' {page}페이지 조회 실패, 지금까지 모은 {len(rows)}건으로 계속: {e}",
+                  file=sys.stderr)
+            break
         rows.extend(chunk)
-        total = int((root.findtext(".//totalCount", "0") or "0").strip() or 0)
         if not chunk or len(rows) >= total:
             break
         page += 1
     return rows
 
 
-def build_region_index() -> dict:
-    """시/도 → 시/군/구 → 읍/면/동(+lawd) 계층 인덱스를 통째로 만든다.
+def build_region_index(sidos: list[str] | None = None) -> dict:
+    """시/도 → 시/군/구 → 읍/면/동(+lawd) 계층 인덱스를 만든다 (sidos 생략 시 전체).
 
     앱이 매번 실시간으로 법정동코드 API를 페이지 순회하면 느리므로,
     이 정적 인덱스를 미리 만들어 배포하면 앱은 그냥 파일 하나만 읽으면 된다.
     행정구역은 거의 바뀌지 않으니 자주 다시 만들 필요는 없다.
     """
     index: dict = {}
-    for sido in SIDO_LIST:
+    for sido in (sidos or SIDO_LIST):
         print(f"▶ {sido} 조회 중…")
-        try:
-            rows = _region_rows(sido)
-        except Exception as e:  # 시/도 하나가 실패해도 나머지는 계속 진행
-            print(f"  ✗ {sido} 조회 실패: {e}", file=sys.stderr)
-            continue
+        rows = _region_rows(sido)  # 페이지 단위로 이미 부분 실패를 흡수함
         rows = [r for r in rows if len(r.get("region_cd", "")) == 10
                 and r.get("locatadd_nm", "").startswith(sido + " ")]
 
@@ -216,8 +221,11 @@ def build_region_index() -> dict:
 
         for v in sido_map.values():
             v["umd"] = sorted(set(v["umd"]))
-        index[sido] = sido_map
-        print(f"  ✓ 시군구 {len(sido_map)}개")
+        if sido_map:  # 완전히 실패해 비어 있으면 아예 안 넣는다 — 앱이 실시간 API로 폴백하도록
+            index[sido] = sido_map
+            print(f"  ✓ 시군구 {len(sido_map)}개")
+        else:
+            print(f"  ✗ {sido} 데이터를 하나도 못 모음 — 앱에서 실시간 조회로 대체됨", file=sys.stderr)
     return index
 
 
@@ -393,14 +401,20 @@ def main() -> None:
         sys.exit("환경변수 DATA_GO_KR_KEY 가 없습니다. .env 또는 GitHub Secrets에 추가하세요.")
 
     if args.build_region_index:
-        index = build_region_index()
-        if not index:
-            sys.exit("모든 시/도 조회 실패 — region_index.json을 만들지 못했습니다 (위 로그 참고).")
         out_dir = Path(__file__).parent / "output"
         out_dir.mkdir(exist_ok=True)
         out = out_dir / "region_index.json"
-        out.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"\n✅ 저장: {out}")
+        existing = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+        missing = [s for s in SIDO_LIST if s not in existing]
+        if not missing:
+            print("region_index.json 이미 전체 시/도가 다 있음 — 건너뜀")
+            return
+        print(f"누락된 시/도 {len(missing)}개 조회: {', '.join(missing)}")
+        existing.update(build_region_index(missing))
+        out.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+        still_missing = [s for s in SIDO_LIST if s not in existing]
+        print(f"\n✅ 저장: {out} ({len(existing)}/{len(SIDO_LIST)}개 시/도"
+              + (f", 여전히 누락: {', '.join(still_missing)}" if still_missing else "") + ")")
         return
 
     if args.config:
