@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 21 1 * *"   # 매월 2일 06:00 KST
   workflow_dispatch: {}     # Actions 탭에서 수동 실행도 가능
+  push:                     # 대상 동네/스크립트가 바뀌면 즉시 갱신
+    paths:
+      - "dongne/targets.json"
+      - "dongne/fetch_data.py"
+      - ".github/workflows/dongne-auto.yml"
 
 permissions:
   contents: write
