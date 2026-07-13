@@ -27,6 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pages Source가 "GitHub Actions"로 설정된 뒤 재실행됨
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
