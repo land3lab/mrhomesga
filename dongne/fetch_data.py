@@ -35,6 +35,7 @@ import json
 import math
 import os
 import sys
+import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -60,7 +61,7 @@ SIDO_LIST = ["서울특별시", "부산광역시", "대구광역시", "인천광
     "전북특별자치도", "전라남도", "경상북도", "경상남도", "제주특별자치도"]
 
 
-def get(url: str, params: dict) -> bytes:
+def get(url: str, params: dict, retries: int = 3) -> bytes:
     qs = urllib.parse.urlencode(params)
     # Encoding 키(% 포함)는 이미 인코딩된 상태이므로 그대로 붙여 이중 인코딩을 피한다
     key = KEY if "%" in KEY else urllib.parse.quote(KEY, safe="")
@@ -68,12 +69,19 @@ def get(url: str, params: dict) -> bytes:
         f"{url}?{qs}&serviceKey={key}",
         headers={"User-Agent": "Mozilla/5.0 (dongne-analysis)"},  # 기본 UA는 WAF에 차단됨
     )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return r.read()
-    except urllib.error.HTTPError as e:
-        body = e.read()[:300].decode("utf-8", "replace")
-        raise RuntimeError(f"HTTP {e.code} ({url.rsplit('/', 1)[-1]}): {body}") from None
+    last_err: Exception | None = None
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            body = e.read()[:300].decode("utf-8", "replace")
+            last_err = RuntimeError(f"HTTP {e.code} ({url.rsplit('/', 1)[-1]}): {body}")
+        except (urllib.error.URLError, TimeoutError) as e:
+            last_err = RuntimeError(f"네트워크 오류 ({url.rsplit('/', 1)[-1]}): {e}")
+        if attempt < retries - 1:
+            time.sleep(2 * (attempt + 1))  # 일시적 오류(타임아웃/사용량 초과) 대비 잠깐 쉬고 재시도
+    raise last_err
 
 
 def recent_months(n: int) -> list[str]:
@@ -182,6 +190,14 @@ def build_region_index() -> dict:
             if rc[2:5] != "000" and rc[5:8] == "000" and rc[8:10] == "00":  # 시군구 레벨
                 sgg_by_code[rc[:5]] = r["locatadd_nm"][len(sido) + 1:].strip()
 
+        # 세종특별자치시처럼 시/군/구 계층이 아예 없는 경우 — 시/도 자체를 하나의 지역으로 취급
+        synthetic = not sgg_by_code
+        if synthetic:
+            for r in rows:
+                rc = r["region_cd"]
+                if rc[5:8] != "000" and rc[8:10] == "00":  # 읍/면/동이 시/도 바로 아래 붙는 경우
+                    sgg_by_code.setdefault(rc[:5], sido)
+
         sido_map = {name: {"lawd": code, "umd": []} for code, name in sgg_by_code.items()}
         for r in rows:
             rc = r["region_cd"]
@@ -190,7 +206,7 @@ def build_region_index() -> dict:
             sgg_name = sgg_by_code.get(rc[:5])
             if not sgg_name:
                 continue
-            prefix = f"{sido} {sgg_name} "
+            prefix = f"{sido} " if synthetic else f"{sido} {sgg_name} "
             addr = r["locatadd_nm"]
             if not addr.startswith(prefix):
                 continue
