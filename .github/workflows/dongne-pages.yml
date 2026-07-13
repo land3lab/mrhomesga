@@ -7,6 +7,11 @@ on:
     paths:
       - "dongne/**"
       - ".github/workflows/dongne-pages.yml"
+  workflow_run:
+    # dongne-auto.yml이 봇 계정으로 auto.json을 커밋·push하면 그 push는
+    # GitHub 정책상 위 push 트리거를 만들지 않으므로, 완료 이벤트로 이어서 실행한다.
+    workflows: ["동네분석 데이터 자동 갱신"]
+    types: [completed]
   workflow_dispatch: {}
 
 permissions:
@@ -20,12 +25,15 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       # Pages Source가 "GitHub Actions"로 설정된 뒤 재실행됨
       - uses: actions/configure-pages@v5
