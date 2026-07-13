@@ -274,16 +274,17 @@ td.best{color:var(--accent-deep);font-weight:800}
       </ul>
     </div>
     <div class="card">
-      <h3 style="margin-top:0">🤖 자동화 (2단계)</h3>
-      <p>레포의 <code>dongne/fetch_data.py</code> 스크립트로 <b>실거래 최고가 · 전세가율 · 상권 점포 수</b>를
-      공공데이터포털 API로 자동 조회할 수 있습니다.
-      <a href="https://www.data.go.kr">data.go.kr</a> 무료 회원가입 → 활용신청 → 발급받은 인증키 하나로 아래 3개 API를 씁니다:</p>
+      <h3 style="margin-top:0">🤖 자동 갱신 파이프라인</h3>
+      <p><b>실거래 최고가·평당가 · 전세가율 · 상권 점포 수</b>는 매월 자동으로 갱신됩니다:</p>
       <ol>
-        <li>국토교통부 아파트 매매 실거래가 상세 자료</li>
-        <li>국토교통부 아파트 전월세 실거래가 자료</li>
-        <li>소상공인시장진흥공단 상가(상권)정보</li>
+        <li><a href="https://www.data.go.kr">data.go.kr</a> 무료 가입 → 3개 API 활용신청
+        (아파트 매매 실거래가 상세 / 아파트 전월세 실거래가 / 소상공인 상가(상권)정보)</li>
+        <li>GitHub 리포지토리 Settings → Secrets → Actions에 <code>DATA_GO_KR_KEY</code> 등록</li>
+        <li>분석할 동네를 <code>dongne/targets.json</code>에 추가 (동 이름, 시군구코드, 단지명)</li>
       </ol>
-      <p>스크립트가 만든 JSON을 아래 "가져오기" 버튼으로 불러오면 자동으로 채워집니다.</p>
+      <p>이후 매월 GitHub Actions가 <code>dongne/output/auto.json</code>을 갱신하고,
+      웹으로 배포된 앱은 접속할 때 자동으로 반영합니다 (Actions 탭에서 수동 실행도 가능).
+      수동으로 입력한 값은 보존되고 자동 조회 항목만 덮어씁니다.</p>
     </div>
     <div class="card">
       <h3 style="margin-top:0">💾 데이터 백업 / 기기 간 이동</h3>
@@ -463,7 +464,7 @@ function openDetail(id){
       <p class="stage-note" style="border:none;padding:0;margin:0">🏗️ <b>${esc(STAGES[d.stage??0])}</b> ${esc(d.stageNote||"")}</p>
       ${d.supplyNote?`<p class="stage-note">🏢 ${esc(d.supplyNote)}</p>`:""}
       ${d.memo?`<p class="stage-note">📝 ${esc(d.memo)}</p>`:""}
-      <p class="updated">마지막 수정: ${esc(d.updatedAt||"—")}</p>
+      <p class="updated">마지막 수정: ${esc(d.updatedAt||"—")}${d.autoUpdatedAt?` · 🤖 공공데이터 자동 갱신: ${esc(d.autoUpdatedAt)}`:""}</p>
     </div>`;
   go("detail");
 }
@@ -569,6 +570,46 @@ function updateCalcs(){
 }
 document.getElementById("dong-form").addEventListener("input", updateCalcs);
 
+/* ───── merge / auto-load ───── */
+function mergeRecords(arr){
+  let added=0, updated=0;
+  arr.forEach(rec=>{
+    if(!rec.name) return;
+    const i = state.dongs.findIndex(x=>x.name===rec.name);
+    if(i>=0){ state.dongs[i] = {...state.dongs[i], ...rec, id: state.dongs[i].id}; updated++; }
+    else{ rec.id = rec.id || "d"+Date.now()+Math.random().toString(36).slice(2,6); state.dongs.push(rec); added++; }
+  });
+  return {added, updated};
+}
+
+// 웹으로 배포된 경우 output/auto.json(공공데이터 자동 갱신본)을 불러와 병합.
+// 수동 입력값은 보존하고 자동 조회 항목만 덮어쓴다.
+const AUTO_FIELDS = ["stores","newAptName","newAptPrice","newAptPy",
+  "dongAptName","dongAptPrice","dongAptPy","rebuildAptName","rebuildAptPrice","rebuildAptPy",
+  "jeonseNew","jeonseDong","autoUpdatedAt"];
+function loadAutoData(){
+  if(!location.protocol.startsWith("http")) return;
+  fetch("output/auto.json", {cache:"no-store"})
+    .then(r=>r.ok ? r.json() : null)
+    .then(data=>{
+      if(!Array.isArray(data)) return;
+      let touched = false;
+      data.forEach(rec=>{
+        if(!rec.name) return;
+        const d = state.dongs.find(x=>x.name===rec.name);
+        if(!d){
+          rec.id = "d"+Date.now()+Math.random().toString(36).slice(2,6);
+          state.dongs.push(rec); touched = true;
+        }else if(d.autoUpdatedAt !== rec.autoUpdatedAt){
+          AUTO_FIELDS.forEach(k=>{ if(rec[k]!=null) d[k]=rec[k]; });
+          touched = true;
+        }
+      });
+      if(touched){ persist(); renderList(); }
+    })
+    .catch(()=>{});
+}
+
 /* ───── import / export ───── */
 function exportJSON(){
   const blob = new Blob([JSON.stringify(state.dongs, null, 2)], {type:"application/json"});
@@ -583,14 +624,7 @@ function importJSON(input){
   rd.onload = () => {
     try{
       const data = JSON.parse(rd.result);
-      const arr = Array.isArray(data) ? data : [data];
-      let added=0, updated=0;
-      arr.forEach(rec=>{
-        if(!rec.name) return;
-        const i = state.dongs.findIndex(x=>x.name===rec.name);
-        if(i>=0){ state.dongs[i] = {...state.dongs[i], ...rec, id: state.dongs[i].id}; updated++; }
-        else{ rec.id = rec.id || "d"+Date.now()+Math.random().toString(36).slice(2,6); state.dongs.push(rec); added++; }
-      });
+      const {added, updated} = mergeRecords(Array.isArray(data) ? data : [data]);
       persist(); renderList(); go("list");
       alert(`가져오기 완료: 추가 ${added}건, 갱신 ${updated}건`);
     }catch(e){ alert("JSON 파일을 읽을 수 없습니다: "+e.message); }
@@ -604,6 +638,7 @@ document.getElementById("stage-select").innerHTML =
   STAGES.map((s,i)=>`<option value="${i}">${s}</option>`).join("");
 persist();
 renderList();
+loadAutoData();
 </script>
 </body>
 </html>

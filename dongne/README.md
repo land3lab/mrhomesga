@@ -8,7 +8,10 @@
 | 파일 | 역할 |
 |---|---|
 | `index.html` | 앱 본체 (입력 + 자동계산 + 점수 + 비교표). 이 파일 하나면 끝 |
-| `fetch_data.py` | 2단계 자동화 — 공공데이터포털 API로 실거래가·전세가율·점포수 자동 조회 |
+| `fetch_data.py` | 공공데이터포털 API로 실거래가·전세가율·점포수 자동 조회 |
+| `targets.json` | 자동 조회 대상 동네 목록 (동 이름·시군구코드·단지명) |
+| `output/auto.json` | 자동 조회 결과 — GitHub Actions가 매월 갱신, 앱이 자동 로드 |
+| `../.github/workflows/dongne-auto.yml` | 매월 자동 실행 스케줄 |
 | `manifest.webmanifest` | 폰 홈 화면에 "앱처럼" 추가할 때 쓰는 설정 |
 
 ## 기능
@@ -32,26 +35,49 @@
 > 데이터는 **기기(브라우저)별로 따로 저장**된다. 폰과 PC에서 같이 쓰려면
 > [가이드] 탭의 내보내기 → 파일 전송 → 가져오기를 이용.
 
-## 2단계: 자동화 (`fetch_data.py`)
+## 2단계: 자동 갱신 파이프라인
 
-공공데이터포털 인증키 **하나**로 실거래 최고가 / 전세가율 / 상권 점포수를 자동 조회한다.
+공공데이터포털 인증키 **하나**로 실거래 최고가·평당가 / 전세가율 / 상권 점포수를 자동 조회하고,
+**GitHub Actions가 매월 자동 실행**해서 결과를 커밋한다. 웹으로 배포된 앱은 접속할 때
+`output/auto.json`을 읽어 자동 반영한다 (수동 입력값은 보존, 자동 항목만 갱신).
 
-1. [data.go.kr](https://www.data.go.kr) 무료 가입 후 아래 3개 API 활용신청 (자동 승인)
+```
+targets.json (분석 대상 등록)
+    ↓  매월 2일 06시 KST — .github/workflows/dongne-auto.yml
+fetch_data.py → 국토부 실거래 API ×2 + 소상공인 상가 API
+    ↓
+dongne/output/auto.json 커밋
+    ↓
+앱 접속 시 자동 병합 (배포본) / [가져오기]로 수동 병합 (로컬 파일)
+```
+
+### 설정 (한 번만)
+
+1. [data.go.kr](https://www.data.go.kr) 무료 가입 후 3개 API 활용신청 (즉시 자동 승인)
    - 국토교통부_아파트 매매 실거래가 상세 자료
    - 국토교통부_아파트 전월세 실거래가 자료
    - 소상공인시장진흥공단_상가(상권)정보
-2. `.env`에 `DATA_GO_KR_KEY=발급키` 추가
-3. 실행 (예: 본오동):
+2. GitHub 리포지토리 **Settings → Secrets and variables → Actions**에
+   `DATA_GO_KR_KEY` = 발급받은 인증키 등록
+3. 분석할 동네를 `dongne/targets.json`에 추가:
 
-```bash
-python dongne/fetch_data.py --name 본오동 --lawd 41271 --umd 본오동 \
-    --adong 4127160000,4127161000,4127162000 --months 6
+```json
+{
+  "name": "본오동",          // 앱에 표시될 동 이름
+  "lawd": "41271",           // 법정동코드 앞 5자리(시군구) — code.go.kr에서 검색
+  "umd": "본오동",           // 법정동 이름 (해당동/재건축 단지 필터)
+  "adongPrefix": "본오",     // 행정동 접두어 (본오1·2·3동 점포 합산, 코드 불필요)
+  "apts": {
+    "new": "그랑시티자이",   // 신축 대표 단지 (시군구 전체에서 검색)
+    "dong": "우성",          // 해당동 최고가 단지
+    "rebuild": "월드"        // 재건축 대상 단지
+  }
+}
 ```
 
-- `--lawd` 법정동코드 앞 5자리: [code.go.kr](https://www.code.go.kr)에서 검색
-- `--adong` 행정동코드 10자리 (본오1·2·3동처럼 여러 개면 쉼표 구분)
-- 결과: `dongne/output/<동이름>.json` → 앱 [가이드 → 가져오기]로 불러오면 자동 반영
-- 단지별 최고가 목록도 터미널에 출력되므로 신축/재건축 단지 가격은 목록에서 골라 입력
+등록 후 Actions 탭에서 "동네분석 데이터 자동 갱신"을 **Run workflow**로 즉시 한 번 실행해볼 수 있다.
+로컬에서 돌릴 때는 `.env`에 키를 넣고 `python dongne/fetch_data.py --config dongne/targets.json`.
+실행 로그에 시군구 단지별 최고가 TOP 15가 출력되므로 신축/재건축 단지 선정에도 참고할 수 있다.
 
 ### 자동화 커버리지
 
