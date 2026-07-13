@@ -196,11 +196,6 @@ td.best{color:var(--accent-deep);font-weight:800}
           <input type="text" name="adongPrefix" placeholder="예: 본오 (본오1·2·3동 합산)"></label>
       </fieldset>
 
-      <div class="btn-row">
-        <button type="button" class="btn primary" id="btn-fetch-info" onclick="fetchInfo()" style="flex:1">🔄 정보 불러오기 (실거래·전세·상권)</button>
-      </div>
-      <p class="hint" id="fetch-status"></p>
-
       <fieldset>
         <legend>인구 <span class="hint">출처: 행정안전부 주민등록 인구통계</span></legend>
         <div class="grid2">
@@ -220,18 +215,18 @@ td.best{color:var(--accent-deep);font-weight:800}
       </fieldset>
 
       <fieldset>
-        <legend>가격 (만원) <span class="hint">출처: 네이버 부동산 / 국토부 실거래가 · 단지명을 입력해야 [정보 불러오기]가 검색할 수 있음</span></legend>
-        <label class="f"><b>신축 대표 단지명 *</b><input type="text" name="newAptName" required placeholder="예: 그랑시티자이"></label>
+        <legend>가격 (만원) <span class="hint">출처: 네이버 부동산 / 국토부 실거래가 · 신축/해당동은 [정보 불러오기]가 자동 선정, 재건축 대상만 직접 입력</span></legend>
+        <label class="f"><b>신축 대표 단지명</b> <span class="hint">(자동 선정 — 최근 준공된 단지 중 거래가 많은 곳)</span><input type="text" name="newAptName" placeholder="정보 불러오기로 자동 채움"></label>
         <div class="grid2">
           <label class="f"><b>신축 최고가(84㎡)</b><input type="number" name="newAptPrice" inputmode="numeric" placeholder="예: 68000"></label>
           <label class="f">신축 평당가<input type="number" name="newAptPy" inputmode="numeric" placeholder="예: 2110"></label>
         </div>
-        <label class="f"><b>해당 동 최고가 단지명 *</b><input type="text" name="dongAptName" required placeholder="예: 우성"></label>
+        <label class="f"><b>해당 동 최고가 단지명</b> <span class="hint">(자동 선정 — 이 읍/면/동 안에서 최고가 단지)</span><input type="text" name="dongAptName" placeholder="정보 불러오기로 자동 채움"></label>
         <div class="grid2">
           <label class="f"><b>해당 동 최고가</b><input type="number" name="dongAptPrice" inputmode="numeric" placeholder="예: 53000"></label>
           <label class="f">해당 동 평당가<input type="number" name="dongAptPy" inputmode="numeric" placeholder="예: 1690"></label>
         </div>
-        <label class="f"><b>재건축 대상 단지명 *</b><input type="text" name="rebuildAptName" required placeholder="예: 월드"></label>
+        <label class="f"><b>재건축 대상 단지명 *</b> <span class="hint">(직접 입력 — 어떤 단지를 재건축 대상으로 볼지는 자동 판단 불가)</span><input type="text" name="rebuildAptName" required placeholder="예: 월드"></label>
         <div class="grid2">
           <label class="f"><b>재건축 최고가</b><input type="number" name="rebuildAptPrice" inputmode="numeric" placeholder="예: 33000"></label>
           <label class="f">재건축 평당가<input type="number" name="rebuildAptPy" inputmode="numeric" placeholder="예: 2160"></label>
@@ -265,6 +260,11 @@ td.best{color:var(--accent-deep);font-weight:800}
         <legend>메모</legend>
         <label class="f"><textarea name="memo" rows="3" placeholder="자유 메모"></textarea></label>
       </fieldset>
+
+      <div class="btn-row">
+        <button type="button" class="btn primary" id="btn-fetch-info" onclick="fetchInfo()" style="flex:1">🔄 정보 불러오기 (실거래·전세·상권·인구·역승하차)</button>
+      </div>
+      <p class="hint" id="fetch-status"></p>
 
       <div class="btn-row">
         <button type="submit" class="btn primary" style="flex:1">저장</button>
@@ -817,9 +817,11 @@ function aggTrades(items){
     const area = parseFloat(it.excluUseAr);
     if(!price || !area) return;
     const py = Math.round(price/(area/3.3058));
-    const cur = byApt[apt] || (byApt[apt] = {max:0, py:0, n:0, umd:it.umdNm||""});
+    const buildYear = parseInt(it.buildYear,10) || 0;
+    const cur = byApt[apt] || (byApt[apt] = {max:0, py:0, n:0, umd:it.umdNm||"", buildYear:0});
     cur.n++;
     if(price>cur.max){ cur.max=price; cur.py=py; }
+    if(buildYear>cur.buildYear) cur.buildYear = buildYear;
   });
   return byApt;
 }
@@ -937,22 +939,40 @@ async function fetchInfo(){
     const rents = aggRents(await rtmsItems(RENT_URL, lawd, 6));
 
     const notes = [];
-    [["new", "신축", trades, "newAptName","newAptPrice","newAptPy"],
-     ["dong", "해당 동", tradesUmd, "dongAptName","dongAptPrice","dongAptPy"],
-     ["rebuild", "재건축", tradesUmd, "rebuildAptName","rebuildAptPrice","rebuildAptPy"]]
-    .forEach(([role, label, scope, nameKey, priceKey, pyKey])=>{
-      const kw = f[nameKey].value.trim();
-      if(!kw){ notes.push(`${label} 단지명이 비어 있어 건너뜀`); return; }
-      const hit = pickApt(scope, kw);
-      if(!hit){ notes.push(`'${kw}'(${label}) 최근 거래를 찾지 못함`); return; }
-      const [apt, v] = hit;
-      setField(f, nameKey, apt);
-      setField(f, priceKey, v.max);
-      setField(f, pyKey, v.py);
-      const jeonse = rents[apt];
-      if(jeonse && role==="new") setField(f, "jeonseNew", jeonse);
-      if(jeonse && role==="dong") setField(f, "jeonseDong", jeonse);
-    });
+
+    // 신축 대표: 검색어 없이 자동 선정 — 시군구 전체에서 건축년도가 가장 최근이면서
+    // 거래가 있는(노이즈 방지로 2건 이상 우선) 단지.
+    const byRecency = (a,b) => (b[1].buildYear-a[1].buildYear) || (b[1].n-a[1].n);
+    const withBuildYear = Object.entries(trades).filter(([,v])=>v.buildYear>0);
+    const solidBuilds = withBuildYear.filter(([,v])=>v.n>=2);
+    const newRanked = (solidBuilds.length ? solidBuilds : withBuildYear).sort(byRecency);
+    if(!newRanked.length){ notes.push("신축 대표 단지를 찾지 못함 (최근 6개월 거래 없음)"); }
+    else{
+      const [apt, v] = newRanked[0];
+      setField(f, "newAptName", apt); setField(f, "newAptPrice", v.max); setField(f, "newAptPy", v.py);
+      const jeonse = rents[apt]; if(jeonse) setField(f, "jeonseNew", jeonse);
+    }
+
+    // 해당 동 최고가: 선택한 읍/면/동 안에서 최고가 단지 자동 선정
+    const dongEntries = Object.entries(tradesUmd);
+    if(!dongEntries.length){ notes.push("해당 동 최근 거래를 찾지 못함"); }
+    else{
+      const [apt, v] = dongEntries.reduce((best,cur)=>cur[1].max>best[1].max?cur:best);
+      setField(f, "dongAptName", apt); setField(f, "dongAptPrice", v.max); setField(f, "dongAptPy", v.py);
+      const jeonse = rents[apt]; if(jeonse) setField(f, "jeonseDong", jeonse);
+    }
+
+    // 재건축 대상: 자동 판단이 불가능한 항목이라 사용자가 입력한 이름으로 검색만 한다.
+    const rkw = f.rebuildAptName.value.trim();
+    if(!rkw){ notes.push("재건축 대상 단지명이 비어 있어 건너뜀"); }
+    else{
+      const hit = pickApt(tradesUmd, rkw);
+      if(!hit){ notes.push(`'${rkw}'(재건축) 최근 거래를 찾지 못함`); }
+      else{
+        const [apt, v] = hit;
+        setField(f, "rebuildAptName", apt); setField(f, "rebuildAptPrice", v.max); setField(f, "rebuildAptPy", v.py);
+      }
+    }
 
     const prefix = f.adongPrefix.value.trim() || umd.replace(/\d+동$/,"").replace(/동$/,"");
     if(prefix){
