@@ -1,4 +1,4 @@
-const CACHE = "dongne-v2";
+const CACHE = "dongne-v3";
 const APP_SHELL = ["./", "./index.html", "./manifest.webmanifest", "./config.js"];
 
 self.addEventListener("install", (e) => {
