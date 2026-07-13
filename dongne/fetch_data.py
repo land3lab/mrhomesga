@@ -181,11 +181,18 @@ def build_record(t: dict, months: int) -> dict:
 
     print(f"\n━━ {name} (시군구 {lawd}) ━━")
     print(f"▶ 매매 실거래 조회 중 ({months}개월)…")
-    trades_all = agg_trades(fetch_rtms(TRADE_URL, lawd, months))
+    try:
+        trades_all = agg_trades(fetch_rtms(TRADE_URL, lawd, months))
+    except Exception as e:  # 개별 API 실패는 경고만 하고 나머지 항목은 계속 수집
+        print(f"  ⚠ 매매 조회 실패 (아파트 매매 실거래가 API 활용신청/승인 확인): {e}")
+        trades_all = {}
     trades_umd = {a: v for a, v in trades_all.items() if not umd or v["umd"] == umd}
     print(f"▶ 전세 실거래 조회 중…")
-    rent_items = fetch_rtms(RENT_URL, lawd, months)
-    rents_all = agg_rents(rent_items)
+    try:
+        rents_all = agg_rents(fetch_rtms(RENT_URL, lawd, months))
+    except Exception as e:
+        print(f"  ⚠ 전세 조회 실패 (아파트 전월세 실거래가 API 활용신청/승인 확인): {e}")
+        rents_all = {}
 
     ranked = sorted(trades_umd.items(), key=lambda kv: kv[1]["max"], reverse=True)
     if ranked:
@@ -223,8 +230,11 @@ def build_record(t: dict, months: int) -> dict:
     prefix = t.get("adongPrefix")
     if prefix:
         print(f"▶ 상가 점포 수 집계 중 ('{prefix}*' 행정동)…")
-        rec["stores"] = fetch_store_count(lawd, prefix)
-        print(f"  ✓ 점포 수: {rec['stores']:,}")
+        try:
+            rec["stores"] = fetch_store_count(lawd, prefix)
+            print(f"  ✓ 점포 수: {rec['stores']:,}")
+        except Exception as e:
+            print(f"  ⚠ 상가 조회 실패 (상가(상권)정보 API 활용신청/승인 확인): {e}")
 
     rec["autoUpdatedAt"] = datetime.now().strftime("%Y-%m-%d")
     return rec
