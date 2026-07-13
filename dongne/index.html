@@ -204,8 +204,8 @@ td.best{color:var(--accent-deep);font-weight:800}
       <fieldset>
         <legend>인구 <span class="hint">출처: 행정안전부 주민등록 인구통계</span></legend>
         <div class="grid2">
-          <label class="f"><b>총인구</b><input type="number" name="popTotal" inputmode="numeric" placeholder="75256"></label>
-          <label class="f"><b>20~40대 인구</b><input type="number" name="pop2040" inputmode="numeric" placeholder="29784"></label>
+          <label class="f"><b>총인구</b><input type="number" name="popTotal" inputmode="numeric" placeholder="예: 75256"></label>
+          <label class="f"><b>20~40대 인구</b><input type="number" name="pop2040" inputmode="numeric" placeholder="예: 29784"></label>
         </div>
         <div class="calc" id="calc-2040"></div>
       </fieldset>
@@ -213,28 +213,28 @@ td.best{color:var(--accent-deep);font-weight:800}
       <fieldset>
         <legend>교통 · 상권</legend>
         <div class="grid2">
-          <label class="f">인접역 이름<input type="text" name="stationName" placeholder="상록수역"></label>
-          <label class="f"><b>연간 승하차 인원</b><input type="number" name="stationRides" inputmode="numeric" placeholder="연간 합계"></label>
+          <label class="f"><b>인접역 이름 *</b><input type="text" name="stationName" required placeholder="예: 상록수역"></label>
+          <label class="f"><b>연간 승하차 인원</b><input type="number" name="stationRides" inputmode="numeric" placeholder="예: 346659"></label>
         </div>
-        <label class="f"><b>동네 상권 점포 수</b><input type="number" name="stores" inputmode="numeric" placeholder="3350"></label>
+        <label class="f"><b>동네 상권 점포 수</b><input type="number" name="stores" inputmode="numeric" placeholder="예: 3350"></label>
       </fieldset>
 
       <fieldset>
-        <legend>가격 (만원) <span class="hint">출처: 네이버 부동산 / 국토부 실거래가</span></legend>
-        <label class="f">신축 대표 단지명<input type="text" name="newAptName" placeholder="그랑시티자이"></label>
+        <legend>가격 (만원) <span class="hint">출처: 네이버 부동산 / 국토부 실거래가 · 단지명을 입력해야 [정보 불러오기]가 검색할 수 있음</span></legend>
+        <label class="f"><b>신축 대표 단지명 *</b><input type="text" name="newAptName" required placeholder="예: 그랑시티자이"></label>
         <div class="grid2">
-          <label class="f"><b>신축 최고가(84㎡)</b><input type="number" name="newAptPrice" inputmode="numeric" placeholder="68000"></label>
-          <label class="f">신축 평당가<input type="number" name="newAptPy" inputmode="numeric" placeholder="2110"></label>
+          <label class="f"><b>신축 최고가(84㎡)</b><input type="number" name="newAptPrice" inputmode="numeric" placeholder="예: 68000"></label>
+          <label class="f">신축 평당가<input type="number" name="newAptPy" inputmode="numeric" placeholder="예: 2110"></label>
         </div>
-        <label class="f">해당 동 최고가 단지명<input type="text" name="dongAptName" placeholder="우성"></label>
+        <label class="f"><b>해당 동 최고가 단지명 *</b><input type="text" name="dongAptName" required placeholder="예: 우성"></label>
         <div class="grid2">
-          <label class="f"><b>해당 동 최고가</b><input type="number" name="dongAptPrice" inputmode="numeric" placeholder="53000"></label>
-          <label class="f">해당 동 평당가<input type="number" name="dongAptPy" inputmode="numeric" placeholder="1690"></label>
+          <label class="f"><b>해당 동 최고가</b><input type="number" name="dongAptPrice" inputmode="numeric" placeholder="예: 53000"></label>
+          <label class="f">해당 동 평당가<input type="number" name="dongAptPy" inputmode="numeric" placeholder="예: 1690"></label>
         </div>
-        <label class="f">재건축 대상 단지명<input type="text" name="rebuildAptName" placeholder="월드"></label>
+        <label class="f"><b>재건축 대상 단지명 *</b><input type="text" name="rebuildAptName" required placeholder="예: 월드"></label>
         <div class="grid2">
-          <label class="f"><b>재건축 최고가</b><input type="number" name="rebuildAptPrice" inputmode="numeric" placeholder="33000"></label>
-          <label class="f">재건축 평당가<input type="number" name="rebuildAptPy" inputmode="numeric" placeholder="2160"></label>
+          <label class="f"><b>재건축 최고가</b><input type="number" name="rebuildAptPrice" inputmode="numeric" placeholder="예: 33000"></label>
+          <label class="f">재건축 평당가<input type="number" name="rebuildAptPy" inputmode="numeric" placeholder="예: 2160"></label>
         </div>
         <div class="calc" id="calc-gap"></div>
       </fieldset>
@@ -873,13 +873,15 @@ async function fetchInfo(){
     status.textContent = "▶ 전세 실거래 조회 중…";
     const rents = aggRents(await rtmsItems(RENT_URL, lawd, 6));
 
-    [["new", trades, "newAptName","newAptPrice","newAptPy"],
-     ["dong", tradesUmd, "dongAptName","dongAptPrice","dongAptPy"],
-     ["rebuild", tradesUmd, "rebuildAptName","rebuildAptPrice","rebuildAptPy"]]
-    .forEach(([role, scope, nameKey, priceKey, pyKey])=>{
+    const notes = [];
+    [["new", "신축", trades, "newAptName","newAptPrice","newAptPy"],
+     ["dong", "해당 동", tradesUmd, "dongAptName","dongAptPrice","dongAptPy"],
+     ["rebuild", "재건축", tradesUmd, "rebuildAptName","rebuildAptPrice","rebuildAptPy"]]
+    .forEach(([role, label, scope, nameKey, priceKey, pyKey])=>{
       const kw = f[nameKey].value.trim();
+      if(!kw){ notes.push(`${label} 단지명이 비어 있어 건너뜀`); return; }
       const hit = pickApt(scope, kw);
-      if(!hit) return;
+      if(!hit){ notes.push(`'${kw}'(${label}) 최근 거래를 찾지 못함`); return; }
       const [apt, v] = hit;
       setField(f, nameKey, apt);
       setField(f, priceKey, v.max);
@@ -896,7 +898,9 @@ async function fetchInfo(){
     }
 
     updateCalcs();
-    status.textContent = "✅ 완료 — 파란색으로 반짝인 항목이 방금 채워진 값입니다.";
+    status.textContent = notes.length
+      ? `✅ 완료 (일부 건너뜀) — ${notes.join(" · ")}`
+      : "✅ 완료 — 파란색으로 반짝인 항목이 방금 채워진 값입니다.";
   }catch(e){
     status.textContent = `⚠ 조회 실패: ${e.message}`;
   }finally{
