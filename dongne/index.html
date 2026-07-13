@@ -616,6 +616,8 @@ const REGION_URL = "https://apis.data.go.kr/1741000/StanReginCd/getStanReginCdLi
 const TRADE_URL  = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev";
 const RENT_URL   = "https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent";
 const STORE_URL  = "https://apis.data.go.kr/B553077/api/open/sdsc2/storeListInDong";
+const POP_URL    = "https://apis.data.go.kr/1741000/admmSexdAgePpltn/selectAdmmSexdAgePpltn";
+const SUBWAY_URL = "https://apis.data.go.kr/B553766/psgr/getStnPsgr";
 const SIDO = ["서울특별시","부산광역시","대구광역시","인천광역시","광주광역시","대전광역시","울산광역시",
   "세종특별자치시","경기도","강원특별자치도","충청북도","충청남도","전북특별자치도","전라남도",
   "경상북도","경상남도","제주특별자치도"];
@@ -849,6 +851,60 @@ async function fetchStoreCount(signgu, prefix){
   }
   return count;
 }
+
+function ym(monthsAgo){
+  const d = new Date(); d.setMonth(d.getMonth()-monthsAgo);
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}`;
+}
+
+// 인구(연령별): 행정동 코드 체계가 법정동코드와 달라서, 시군구 단위로 조회한 뒤
+// 응답에 포함된 행정동명(dongNm)을 접두어로 걸러서 합산한다 (상권 점포수와 같은 방식).
+async function fetchPopulation(lawd, dongPrefix){
+  const admmCd = lawd + "00000"; // 시군구 단위 코드(10자리, 읍/면/동 자리는 0)
+  const to = ym(1), from = ym(3); // 이번 달 통계는 아직 안 올라왔을 수 있어 지난달 기준, 3개월 창으로 조회
+  const qs = `admmCd=${admmCd}&srchFrYm=${from}&srchToYm=${to}&lv=3&type=xml&numOfRows=1000&pageNo=1`;
+  const res = await fetch(`${POP_URL}?${qs}&serviceKey=${dataGoKey()}`);
+  const {rows} = parseItems(await res.text());
+  if(!rows.length) return null;
+  const latestYm = rows.reduce((m,r)=>(r.statsYm||"")>m?r.statsYm:m, "");
+  const matched = rows.filter(r=>r.statsYm===latestYm && (r.dongNm||"").startsWith(dongPrefix));
+  if(!matched.length) return null;
+  let total = 0, age2040 = 0;
+  matched.forEach(r=>{
+    total += +(r.totNmprCnt || 0);
+    ["male20AgeNmprCnt","feml20AgeNmprCnt","male30AgeNmprCnt","feml30AgeNmprCnt","male40AgeNmprCnt","feml40AgeNmprCnt"]
+      .forEach(k=>{ age2040 += +(r[k] || 0); });
+  });
+  return {total, age2040};
+}
+
+// 서울 지하철(서울교통공사 노선만) 역별 승하차: 최근 1주일 일별 데이터만 제공되므로
+// 가장 최근 조회 가능한 하루치를 찾아 365일로 환산한 "추정" 연간 인원을 낸다.
+// 서울교통공사 관할이 아닌 역(예: 코레일 구간)은 데이터가 없을 수 있다.
+const SUBWAY_NON_COUNT_FIELDS = new Set(["crtrYmd","pasngYmd","pasngHr","stnCd","stnNo","stnNm",
+  "trnscdSeCd","trnscdUserSeCd","trnscdSeCdNm","lineNm"]);
+async function fetchStationRides(stationName){
+  const name = stationName.replace(/역$/,"").trim();
+  if(!name) return null;
+  for(let back=0; back<7; back++){
+    const d = new Date(); d.setDate(d.getDate()-back);
+    const ymd = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+    const qs = `pasngYmd=${ymd}&stnNm=${encodeURIComponent(name)}&dataType=json&numOfRows=200&pageNo=1`;
+    const res = await fetch(`${SUBWAY_URL}?${qs}&serviceKey=${dataGoKey()}`);
+    const json = await res.json().catch(()=>null);
+    const rawItems = json?.body?.items?.item;
+    const rows = Array.isArray(rawItems) ? rawItems : (rawItems ? [rawItems] : []);
+    if(rows.length){
+      let daily = 0;
+      rows.forEach(r=>Object.entries(r).forEach(([k,v])=>{
+        if(!SUBWAY_NON_COUNT_FIELDS.has(k) && v!=null && v!=="" && !isNaN(+v)) daily += +v;
+      }));
+      return { annualEstimate: Math.round(daily*365) };
+    }
+  }
+  return null;
+}
+
 function setField(f, name, value){
   if(value==null) return;
   f[name].value = value;
@@ -895,6 +951,23 @@ async function fetchInfo(){
     if(prefix){
       status.textContent = "▶ 상권 점포 수 집계 중…";
       setField(f, "stores", await fetchStoreCount(lawd, prefix));
+    }
+
+    status.textContent = "▶ 인구 조회 중…";
+    try{
+      const pop = await fetchPopulation(lawd, prefix || umd);
+      if(pop){ setField(f, "popTotal", pop.total); setField(f, "pop2040", pop.age2040); }
+      else notes.push("인구 데이터를 찾지 못함");
+    }catch(e){ notes.push(`인구 조회 실패: ${e.message}`); }
+
+    const stationName = f.stationName.value.trim();
+    if(stationName){
+      status.textContent = "▶ 역 승하차 조회 중… (서울교통공사 노선만 지원)";
+      try{
+        const ride = await fetchStationRides(stationName);
+        if(ride) setField(f, "stationRides", ride.annualEstimate);
+        else notes.push("역 승하차 데이터 없음(서울교통공사 관할 역이 아니거나 최근 1주일 자료 없음)");
+      }catch(e){ notes.push(`역 승하차 조회 실패: ${e.message}`); }
     }
 
     updateCalcs();
