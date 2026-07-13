@@ -168,7 +168,11 @@ def build_region_index() -> dict:
     index: dict = {}
     for sido in SIDO_LIST:
         print(f"▶ {sido} 조회 중…")
-        rows = _region_rows(sido)
+        try:
+            rows = _region_rows(sido)
+        except Exception as e:  # 시/도 하나가 실패해도 나머지는 계속 진행
+            print(f"  ✗ {sido} 조회 실패: {e}", file=sys.stderr)
+            continue
         rows = [r for r in rows if len(r.get("region_cd", "")) == 10
                 and r.get("locatadd_nm", "").startswith(sido + " ")]
 
@@ -374,6 +378,8 @@ def main() -> None:
 
     if args.build_region_index:
         index = build_region_index()
+        if not index:
+            sys.exit("모든 시/도 조회 실패 — region_index.json을 만들지 못했습니다 (위 로그 참고).")
         out_dir = Path(__file__).parent / "output"
         out_dir.mkdir(exist_ok=True)
         out = out_dir / "region_index.json"
