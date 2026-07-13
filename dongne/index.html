@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
-<title>재건축 동네분석</title>
+<title>RSAR Land3 재건둥이 — 재건축 동네분석 시스템</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%98%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="동네분석">
+<meta name="apple-mobile-web-app-title" content="재건둥이">
 <style>
 :root{
   --page:#f9f9f7; --surface:#fcfcfb;
@@ -115,6 +115,14 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
 .calc{font-size:.78rem;color:var(--good-text);font-weight:700;margin-top:4px}
 .hint{font-size:.72rem;color:var(--muted);margin-top:3px}
+.toggle-group{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+.toggle-btn{
+  padding:7px 12px;border:1px solid var(--baseline);border-radius:999px;
+  background:var(--page);font:inherit;font-size:.8rem;color:var(--ink2);cursor:pointer;
+}
+.toggle-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+input.filled{background:var(--accent-soft)!important;transition:background .15s ease}
+#btn-fetch-info:disabled{opacity:.55;cursor:default}
 
 /* ─ compare table ─ */
 .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
@@ -141,8 +149,8 @@ td.best{color:var(--accent-deep);font-weight:800}
 <body>
 <div class="wrap">
   <header class="app">
-    <h1>🏘️ 재건축 동네분석</h1>
-    <p>행정동 단위 재건축 투자 분석 · 데이터는 이 기기에 저장됩니다</p>
+    <h1>🏘️ RSAR Land3 재건둥이</h1>
+    <p>재건축 동네분석 시스템 · 행정동 단위 재건축 투자 분석 · 데이터는 이 기기에 저장됩니다</p>
   </header>
 
   <!-- 목록 -->
@@ -168,11 +176,30 @@ td.best{color:var(--accent-deep);font-weight:800}
     <form id="dong-form" onsubmit="saveDong(event)">
       <fieldset>
         <legend>기본 정보</legend>
-        <div class="grid2">
-          <label class="f"><b>행정동 이름 *</b><input type="text" name="name" required placeholder="예: 본오동"></label>
-          <label class="f">시/군/구<input type="text" name="city" placeholder="예: 안산시 상록구"></label>
-        </div>
+        <label class="f"><b>시/도 *</b></label>
+        <div class="toggle-group" id="toggle-sido"></div>
+
+        <label class="f"><b>시/군/구 *</b></label>
+        <div class="toggle-group" id="toggle-sigungu"><span class="hint">시/도를 먼저 선택하세요</span></div>
+
+        <label class="f"><b>읍/면/동 *</b></label>
+        <div class="toggle-group" id="toggle-umd"><span class="hint">시/군/구를 먼저 선택하세요</span></div>
+
+        <p class="hint" id="region-picked"></p>
+
+        <input type="hidden" name="name">
+        <input type="hidden" name="city">
+        <input type="hidden" name="sido">
+        <input type="hidden" name="lawd">
+
+        <label class="f">상가 집계용 행정동 접두어 <span class="hint">(정보 불러오기의 점포 수 집계 기준. 비우면 읍/면/동 이름으로 추정)</span>
+          <input type="text" name="adongPrefix" placeholder="예: 본오 (본오1·2·3동 합산)"></label>
       </fieldset>
+
+      <div class="btn-row">
+        <button type="button" class="btn primary" id="btn-fetch-info" onclick="fetchInfo()" style="flex:1">🔄 정보 불러오기 (실거래·전세·상권)</button>
+      </div>
+      <p class="hint" id="fetch-status"></p>
 
       <fieldset>
         <legend>인구 <span class="hint">출처: 행정안전부 주민등록 인구통계</span></legend>
@@ -310,6 +337,7 @@ td.best{color:var(--accent-deep);font-weight:800}
   <button data-v="guide" onclick="go('guide')"><span class="ic">📖</span>가이드</button>
 </nav>
 
+<script src="config.js"></script>
 <script>
 "use strict";
 const LS_KEY = "dongne-data-v1";
@@ -515,7 +543,7 @@ function renderCompare(){
 }
 
 /* ───── form ───── */
-const FIELDS = ["name","city","popTotal","pop2040","stationName","stationRides","stores",
+const FIELDS = ["name","city","sido","lawd","adongPrefix","popTotal","pop2040","stationName","stationRides","stores",
   "newAptName","newAptPrice","newAptPy","dongAptName","dongAptPrice","dongAptPy",
   "rebuildAptName","rebuildAptPrice","rebuildAptPy","jeonseNew","jeonseDong",
   "supplyUnits","supplyNote","farAvg","stage","stageNote","memo"];
@@ -527,9 +555,17 @@ function editDong(id){
   state.editing = id;
   const f = document.getElementById("dong-form");
   f.reset();
+  document.getElementById("fetch-status").textContent = "";
   const d = id ? state.dongs.find(x=>x.id===id) : null;
   if(d) FIELDS.forEach(k=>{ if(f[k]!=null && d[k]!=null) f[k].value = d[k]; });
   updateCalcs();
+  renderSidoToggles();
+  document.getElementById("toggle-sigungu").innerHTML = `<span class="hint">시/도를 먼저 선택하세요</span>`;
+  document.getElementById("toggle-umd").innerHTML = `<span class="hint">시/군/구를 먼저 선택하세요</span>`;
+  if(d && d.sido && d.city){
+    loadSigungu(d.sido).then(()=>{ if(d.lawd) loadUmd(`${d.sido} ${d.city}`, d.lawd); });
+  }
+  refreshRegionHint();
   go("form");
 }
 function cancelForm(){ go(state.editing ? "detail" : "list"); }
@@ -537,6 +573,7 @@ function cancelForm(){ go(state.editing ? "detail" : "list"); }
 function saveDong(ev){
   ev.preventDefault();
   const f = ev.target, rec = {};
+  if(!f.name.value){ alert("시/도 → 시/군/구 → 읍/면/동을 선택해주세요."); return; }
   FIELDS.forEach(k=>{
     let v = f[k]?.value?.trim() ?? "";
     rec[k] = NUMS.has(k) ? (v===""?null:+v) : v;
@@ -573,6 +610,242 @@ function updateCalcs(){
     (jN||jD) ? `→ 전세가율: 신축 ${pct(jN)} · 해당 동 ${pct(jD)}` : "";
 }
 document.getElementById("dong-form").addEventListener("input", updateCalcs);
+
+/* ───── 공공데이터 실시간 조회 (법정동코드 · 실거래 · 전세 · 상권) ───── */
+const REGION_URL = "https://apis.data.go.kr/1741000/StanReginCd/getStanReginCdList";
+const TRADE_URL  = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev";
+const RENT_URL   = "https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent";
+const STORE_URL  = "https://apis.data.go.kr/B553077/api/open/sdsc2/storeListInDong";
+const SIDO = ["서울특별시","부산광역시","대구광역시","인천광역시","광주광역시","대전광역시","울산광역시",
+  "세종특별자치시","경기도","강원특별자치도","충청북도","충청남도","전북특별자치도","전라남도",
+  "경상북도","경상남도","제주특별자치도"];
+
+function dataGoKey(){
+  const k = (window.DATA_GO_KR_KEY||"").trim();
+  return k.includes("%") ? k : encodeURIComponent(k);
+}
+function parseItems(xmlText){
+  const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+  if(doc.querySelector("parsererror")) throw new Error("응답 파싱 실패");
+  const code = doc.querySelector("resultCode")?.textContent;
+  if(code && !["00","000","INFO-00"].includes(code)){
+    throw new Error(doc.querySelector("resultMsg")?.textContent || `API 오류(${code})`);
+  }
+  const total = +(doc.querySelector("totalCount")?.textContent || 0);
+  const rows = [...doc.getElementsByTagName("item")].map(item=>{
+    const row = {};
+    [...item.children].forEach(el=>row[el.tagName]=(el.textContent||"").trim());
+    return row;
+  });
+  return {rows, total};
+}
+function levelOf(regionCd){
+  if(!regionCd || regionCd.length<10) return "?";
+  if(regionCd.slice(2)==="00000000") return "sido";
+  if(regionCd.slice(5)==="00000") return "sigungu";
+  if(regionCd.slice(8)==="00") return "umd";
+  return "ri";
+}
+async function regionRows(locatadd_nm){
+  const rows = [];
+  for(let page=1;;page++){
+    const qs = `locatadd_nm=${encodeURIComponent(locatadd_nm)}&pageNo=${page}&numOfRows=100&type=xml`;
+    const res = await fetch(`${REGION_URL}?${qs}&serviceKey=${dataGoKey()}`);
+    const {rows: chunk, total} = parseItems(await res.text());
+    rows.push(...chunk);
+    if(!chunk.length || rows.length>=total) break;
+  }
+  return rows;
+}
+
+function renderToggles(containerId, items, currentLabel, onPick){
+  const box = document.getElementById(containerId);
+  if(!items.length){ box.innerHTML = `<span class="hint">결과 없음</span>`; return; }
+  box.innerHTML = items.map(it =>
+    `<button type="button" class="toggle-btn${it.label===currentLabel?" on":""}">${esc(it.label)}</button>`
+  ).join("");
+  [...box.children].forEach((btn,i)=>{
+    btn.onclick = ()=>{
+      [...box.children].forEach(b=>b.classList.remove("on"));
+      btn.classList.add("on");
+      onPick(items[i]);
+    };
+  });
+}
+
+function refreshRegionHint(){
+  const f = document.getElementById("dong-form");
+  const txt = [f.sido.value, f.city.value, f.name.value].filter(Boolean).join(" ");
+  document.getElementById("region-picked").textContent =
+    txt ? `선택됨: ${txt}${f.lawd.value ? ` (lawd=${f.lawd.value})` : ""}` : "";
+}
+
+function renderSidoToggles(){
+  const f = document.getElementById("dong-form");
+  renderToggles("toggle-sido", SIDO.map(s=>({label:s})), f.sido.value, (it)=>{
+    const f = document.getElementById("dong-form");
+    f.sido.value = it.label; f.city.value=""; f.name.value=""; f.lawd.value="";
+    document.getElementById("toggle-umd").innerHTML = `<span class="hint">시/군/구를 먼저 선택하세요</span>`;
+    refreshRegionHint();
+    loadSigungu(it.label);
+  });
+}
+
+async function loadSigungu(sidoName){
+  const box = document.getElementById("toggle-sigungu");
+  box.innerHTML = `<span class="hint">불러오는 중…</span>`;
+  try{
+    const rows = await regionRows(sidoName);
+    const items = rows
+      .filter(r=>levelOf(r.region_cd)==="sigungu" && (r.locatadd_nm||"").startsWith(sidoName+" "))
+      .map(r=>({label:r.locatadd_nm.slice(sidoName.length+1).trim(), addr:r.locatadd_nm, sgg:r.region_cd.slice(0,5)}));
+    const uniq = [...new Map(items.map(i=>[i.sgg,i])).values()].sort((a,b)=>a.label.localeCompare(b.label,"ko"));
+    const f = document.getElementById("dong-form");
+    renderToggles("toggle-sigungu", uniq, f.city.value, (it)=>{
+      const f = document.getElementById("dong-form");
+      f.city.value = it.label; f.lawd.value = it.sgg; f.name.value = "";
+      refreshRegionHint();
+      loadUmd(it.addr, it.sgg);
+    });
+  }catch(e){
+    box.innerHTML = `<span class="hint">⚠ 조회 실패: ${esc(e.message)}</span>`;
+  }
+}
+
+async function loadUmd(sigunguAddr, sggCode){
+  const box = document.getElementById("toggle-umd");
+  box.innerHTML = `<span class="hint">불러오는 중…</span>`;
+  try{
+    const rows = await regionRows(sigunguAddr);
+    const items = rows
+      .filter(r=>levelOf(r.region_cd)==="umd" && r.region_cd.slice(0,5)===sggCode && (r.locatadd_nm||"").startsWith(sigunguAddr+" "))
+      .map(r=>({label:r.locatadd_nm.slice(sigunguAddr.length+1).trim()}))
+      .filter(it=>it.label);
+    const uniq = [...new Map(items.map(i=>[i.label,i])).values()].sort((a,b)=>a.label.localeCompare(b.label,"ko"));
+    const f = document.getElementById("dong-form");
+    renderToggles("toggle-umd", uniq, f.name.value, (it)=>{
+      const f = document.getElementById("dong-form");
+      f.name.value = it.label;
+      refreshRegionHint();
+    });
+  }catch(e){
+    box.innerHTML = `<span class="hint">⚠ 조회 실패: ${esc(e.message)}</span>`;
+  }
+}
+
+async function rtmsItems(url, lawd, months){
+  const items = [];
+  let y = new Date().getFullYear(), m = new Date().getMonth()+1;
+  for(let i=0;i<months;i++){
+    const ym = `${y}${String(m).padStart(2,"0")}`;
+    for(let page=1;;page++){
+      const qs = `LAWD_CD=${lawd}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=${page}`;
+      const res = await fetch(`${url}?${qs}&serviceKey=${dataGoKey()}`);
+      const {rows} = parseItems(await res.text());
+      items.push(...rows);
+      if(rows.length<1000) break;
+    }
+    m--; if(m===0){ m=12; y--; }
+  }
+  return items;
+}
+function aggTrades(items){
+  const byApt = {};
+  items.forEach(it=>{
+    const apt = it.aptNm || "?";
+    const price = parseInt((it.dealAmount||"").replace(/,/g,""),10);
+    const area = parseFloat(it.excluUseAr);
+    if(!price || !area) return;
+    const py = Math.round(price/(area/3.3058));
+    const cur = byApt[apt] || (byApt[apt] = {max:0, py:0, n:0, umd:it.umdNm||""});
+    cur.n++;
+    if(price>cur.max){ cur.max=price; cur.py=py; }
+  });
+  return byApt;
+}
+function aggRents(items){
+  const byApt = {};
+  items.forEach(it=>{
+    const mr = (it.monthlyRent||"0").replace(/,/g,"");
+    if(mr && mr!=="0") return; // 월세 제외 → 순수 전세만
+    const apt = it.aptNm || "?";
+    const deposit = parseInt((it.deposit||"").replace(/,/g,""),10);
+    if(!deposit) return;
+    byApt[apt] = Math.max(byApt[apt]||0, deposit);
+  });
+  return byApt;
+}
+function pickApt(agg, keyword){
+  if(!keyword) return null;
+  const hits = Object.entries(agg).filter(([apt])=>apt.includes(keyword));
+  if(!hits.length) return null;
+  return hits.reduce((best,cur)=>cur[1].n>best[1].n?cur:best);
+}
+async function fetchStoreCount(signgu, prefix){
+  const page1 = await (await fetch(`${STORE_URL}?divId=signguCd&key=${signgu}&type=json&numOfRows=1000&pageNo=1&serviceKey=${dataGoKey()}`)).json();
+  const body1 = page1.body || {};
+  const total = +(body1.totalCount || 0);
+  let count = (body1.items||[]).filter(it=>(it.adongNm||"").startsWith(prefix)).length;
+  for(let page=2; page<=Math.ceil(total/1000); page++){
+    const res = await (await fetch(`${STORE_URL}?divId=signguCd&key=${signgu}&type=json&numOfRows=1000&pageNo=${page}&serviceKey=${dataGoKey()}`)).json();
+    count += ((res.body||{}).items||[]).filter(it=>(it.adongNm||"").startsWith(prefix)).length;
+  }
+  return count;
+}
+function setField(f, name, value){
+  if(value==null) return;
+  f[name].value = value;
+  f[name].classList.add("filled");
+  setTimeout(()=>f[name].classList.remove("filled"), 1500);
+}
+
+async function fetchInfo(){
+  const f = document.getElementById("dong-form");
+  const status = document.getElementById("fetch-status");
+  const lawd = f.lawd.value, umd = f.name.value;
+  if(!lawd || !umd){ alert("먼저 시/도 → 시/군/구 → 읍/면/동을 선택하세요."); return; }
+  if(!window.DATA_GO_KR_KEY){ alert("공공데이터 인증키가 없습니다 (config.js 확인 — 이 화면을 로컬 파일로 열었다면 배포된 사이트에서 시도하세요)."); return; }
+  const btn = document.getElementById("btn-fetch-info");
+  btn.disabled = true;
+  try{
+    status.textContent = "▶ 매매 실거래 조회 중… (최근 6개월)";
+    const tradeItems = await rtmsItems(TRADE_URL, lawd, 6);
+    const trades = aggTrades(tradeItems);
+    const tradesUmd = Object.fromEntries(Object.entries(trades).filter(([,v])=>v.umd===umd));
+
+    status.textContent = "▶ 전세 실거래 조회 중…";
+    const rents = aggRents(await rtmsItems(RENT_URL, lawd, 6));
+
+    [["new", trades, "newAptName","newAptPrice","newAptPy"],
+     ["dong", tradesUmd, "dongAptName","dongAptPrice","dongAptPy"],
+     ["rebuild", tradesUmd, "rebuildAptName","rebuildAptPrice","rebuildAptPy"]]
+    .forEach(([role, scope, nameKey, priceKey, pyKey])=>{
+      const kw = f[nameKey].value.trim();
+      const hit = pickApt(scope, kw);
+      if(!hit) return;
+      const [apt, v] = hit;
+      setField(f, nameKey, apt);
+      setField(f, priceKey, v.max);
+      setField(f, pyKey, v.py);
+      const jeonse = rents[apt];
+      if(jeonse && role==="new") setField(f, "jeonseNew", jeonse);
+      if(jeonse && role==="dong") setField(f, "jeonseDong", jeonse);
+    });
+
+    const prefix = f.adongPrefix.value.trim() || umd.replace(/\d+동$/,"").replace(/동$/,"");
+    if(prefix){
+      status.textContent = "▶ 상권 점포 수 집계 중…";
+      setField(f, "stores", await fetchStoreCount(lawd, prefix));
+    }
+
+    updateCalcs();
+    status.textContent = "✅ 완료 — 파란색으로 반짝인 항목이 방금 채워진 값입니다.";
+  }catch(e){
+    status.textContent = `⚠ 조회 실패: ${e.message}`;
+  }finally{
+    btn.disabled = false;
+  }
+}
 
 /* ───── merge / auto-load ───── */
 function mergeRecords(arr){

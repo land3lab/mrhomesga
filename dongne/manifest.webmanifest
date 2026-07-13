@@ -1,6 +1,6 @@
 {
-  "name": "재건축 동네분석",
-  "short_name": "동네분석",
+  "name": "RSAR Land3 재건둥이 (재건축 동네분석 시스템)",
+  "short_name": "재건둥이",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#f9f9f7",

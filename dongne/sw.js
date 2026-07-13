@@ -1,5 +1,5 @@
-const CACHE = "dongne-v1";
-const APP_SHELL = ["./", "./index.html", "./manifest.webmanifest"];
+const CACHE = "dongne-v2";
+const APP_SHELL = ["./", "./index.html", "./manifest.webmanifest", "./config.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(APP_SHELL)));

@@ -38,9 +38,21 @@ jobs:
       # Pages Source가 "GitHub Actions"로 설정된 뒤 재실행됨
       - uses: actions/configure-pages@v5
 
+      # config.template.js의 자리표시자를 실제 키로 치환해 배포본에만 주입한다.
+      # (레포/git 이력에는 키가 남지 않음 — 배포된 정적 페이지에는 여전히 노출되니
+      #  dongne/README.md의 "API 키 노출" 안내 참고)
+      - name: 배포용 빌드 (API 키 주입)
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: |
+          rm -rf _site_build
+          cp -r dongne _site_build
+          rm -f _site_build/config.template.js
+          sed "s|__DATA_GO_KR_KEY__|${DATA_GO_KR_KEY}|" dongne/config.template.js > _site_build/config.js
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dongne
+          path: _site_build
 
       - id: deployment
         uses: actions/deploy-pages@v4
