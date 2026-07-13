@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<title>재건축 동네분석</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%98%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<style>
+:root{
+  --page:#f9f9f7; --surface:#fcfcfb;
+  --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,.10);
+  --accent:#2a78d6; --accent-deep:#1c5cab; --accent-soft:#cde2fb;
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --good-text:#006300;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --page:#0d0d0d; --surface:#1a1a19;
+    --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,.10);
+    --accent:#3987e5; --accent-deep:#86b6ef; --accent-soft:#184f95;
+    --good-text:#0ca30c;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',system-ui,-apple-system,sans-serif;
+  background:var(--page); color:var(--ink); line-height:1.5;
+  padding-bottom:calc(64px + env(safe-area-inset-bottom));
+}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+header.app{padding:20px 0 4px}
+header.app h1{font-size:1.25rem;font-weight:800;letter-spacing:-.02em}
+header.app p{font-size:.8rem;color:var(--muted)}
+
+/* ─ tabs (bottom on mobile) ─ */
+nav.tabs{
+  position:fixed;bottom:0;left:0;right:0;z-index:30;
+  display:flex;background:var(--surface);border-top:1px solid var(--border);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+nav.tabs button{
+  flex:1;padding:10px 0 8px;background:none;border:none;cursor:pointer;
+  font:inherit;font-size:.72rem;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;
+}
+nav.tabs button .ic{font-size:1.15rem;line-height:1}
+nav.tabs button.on{color:var(--accent);font-weight:700}
+
+/* ─ cards ─ */
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:16px;margin:12px 0;
+}
+.dong-card{cursor:pointer;transition:transform .06s}
+.dong-card:active{transform:scale(.985)}
+.dong-head{display:flex;align-items:center;gap:10px}
+.dong-head h2{font-size:1.05rem;font-weight:800;flex:1}
+.dong-head .region{font-size:.75rem;color:var(--muted);display:block;font-weight:400}
+.grade{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--border);border-radius:999px;padding:3px 10px;
+  font-size:.8rem;font-weight:800;background:var(--page);
+}
+.grade .dot{width:9px;height:9px;border-radius:50%}
+.score-big{font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums}
+.score-big small{font-size:.75rem;color:var(--muted);font-weight:400}
+.mini-stats{display:flex;gap:0;margin-top:12px;border-top:1px solid var(--grid);padding-top:10px}
+.mini-stats div{flex:1;min-width:0}
+.mini-stats .k{font-size:.68rem;color:var(--muted)}
+.mini-stats .v{font-size:.85rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ─ score bars ─ */
+.sbar{display:grid;grid-template-columns:7.2em 1fr 3.4em;gap:8px;align-items:center;margin:7px 0;font-size:.78rem}
+.sbar .lab{color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sbar .track{display:block;height:10px;background:var(--grid);border-radius:5px;overflow:hidden}
+.sbar .fill{display:block;height:100%;background:var(--accent);border-radius:5px 4px 4px 5px;min-width:2px}
+.sbar .val{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink2)}
+.sbar.na .fill{background:var(--baseline)}
+.sbar.na .val{color:var(--muted)}
+
+/* ─ buttons & form ─ */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  font:inherit;font-size:.9rem;font-weight:700;cursor:pointer;
+  border-radius:10px;padding:11px 16px;border:1px solid var(--border);
+  background:var(--surface);color:var(--ink);
+}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:var(--critical)}
+.btn.small{padding:7px 12px;font-size:.8rem}
+.btn-row{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap}
+.fab{
+  position:fixed;right:16px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:25;
+  width:54px;height:54px;border-radius:50%;border:none;background:var(--accent);color:#fff;
+  font-size:1.7rem;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25);
+}
+fieldset{border:1px solid var(--border);border-radius:12px;padding:12px 14px 14px;margin:14px 0;background:var(--surface)}
+legend{font-size:.8rem;font-weight:800;color:var(--accent-deep);padding:0 6px}
+label.f{display:block;margin:10px 0 0;font-size:.78rem;color:var(--ink2)}
+label.f b{color:var(--ink)}
+input[type=text],input[type=number],select,textarea{
+  width:100%;margin-top:4px;padding:10px 12px;font:inherit;font-size:.95rem;
+  border:1px solid var(--baseline);border-radius:9px;background:var(--page);color:var(--ink);
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.calc{font-size:.78rem;color:var(--good-text);font-weight:700;margin-top:4px}
+.hint{font-size:.72rem;color:var(--muted);margin-top:3px}
+
+/* ─ compare table ─ */
+.tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+table.cmp{border-collapse:collapse;font-size:.8rem;min-width:100%}
+table.cmp th,table.cmp td{padding:8px 12px;border-bottom:1px solid var(--grid);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.cmp th:first-child,table.cmp td:first-child{text-align:left;position:sticky;left:0;background:var(--surface);color:var(--ink2);font-weight:400;border-right:1px solid var(--grid)}
+table.cmp thead th{font-weight:800;color:var(--ink);border-bottom:1px solid var(--baseline)}
+table.cmp tr:last-child td{border-bottom:none}
+td.best{color:var(--accent-deep);font-weight:800}
+
+/* ─ misc ─ */
+.empty{padding:44px 12px;text-align:center;color:var(--muted);font-size:.9rem}
+.guide h3{font-size:.95rem;margin:18px 0 6px}
+.guide p,.guide li{font-size:.85rem;color:var(--ink2)}
+.guide ul,.guide ol{padding-left:20px;margin:6px 0}
+.guide code{background:var(--grid);border-radius:4px;padding:1px 5px;font-size:.8em}
+.guide a{color:var(--accent);word-break:break-all}
+.view{display:none}
+.view.on{display:block}
+.stage-note{font-size:.8rem;color:var(--ink2);margin-top:10px;padding-top:10px;border-top:1px solid var(--grid)}
+.updated{font-size:.7rem;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="app">
+    <h1>🏘️ 재건축 동네분석</h1>
+    <p>행정동 단위 재건축 투자 분석 · 데이터는 이 기기에 저장됩니다</p>
+  </header>
+
+  <!-- 목록 -->
+  <section id="view-list" class="view on">
+    <div id="dong-list"></div>
+  </section>
+
+  <!-- 상세 -->
+  <section id="view-detail" class="view">
+    <div class="btn-row">
+      <button class="btn small" onclick="go('list')">← 목록</button>
+      <button class="btn small" onclick="editDong(state.current)">✏️ 수정</button>
+      <button class="btn small danger" onclick="removeDong(state.current)">삭제</button>
+    </div>
+    <div id="detail-body"></div>
+  </section>
+
+  <!-- 입력 폼 -->
+  <section id="view-form" class="view">
+    <div class="btn-row">
+      <button class="btn small" onclick="cancelForm()">← 취소</button>
+    </div>
+    <form id="dong-form" onsubmit="saveDong(event)">
+      <fieldset>
+        <legend>기본 정보</legend>
+        <div class="grid2">
+          <label class="f"><b>행정동 이름 *</b><input type="text" name="name" required placeholder="예: 본오동"></label>
+          <label class="f">시/군/구<input type="text" name="city" placeholder="예: 안산시 상록구"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>인구 <span class="hint">출처: 행정안전부 주민등록 인구통계</span></legend>
+        <div class="grid2">
+          <label class="f"><b>총인구</b><input type="number" name="popTotal" inputmode="numeric" placeholder="75256"></label>
+          <label class="f"><b>20~40대 인구</b><input type="number" name="pop2040" inputmode="numeric" placeholder="29784"></label>
+        </div>
+        <div class="calc" id="calc-2040"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>교통 · 상권</legend>
+        <div class="grid2">
+          <label class="f">인접역 이름<input type="text" name="stationName" placeholder="상록수역"></label>
+          <label class="f"><b>연간 승하차 인원</b><input type="number" name="stationRides" inputmode="numeric" placeholder="연간 합계"></label>
+        </div>
+        <label class="f"><b>동네 상권 점포 수</b><input type="number" name="stores" inputmode="numeric" placeholder="3350"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>가격 (만원) <span class="hint">출처: 네이버 부동산 / 국토부 실거래가</span></legend>
+        <label class="f">신축 대표 단지명<input type="text" name="newAptName" placeholder="그랑시티자이"></label>
+        <div class="grid2">
+          <label class="f"><b>신축 최고가(84㎡)</b><input type="number" name="newAptPrice" inputmode="numeric" placeholder="68000"></label>
+          <label class="f">신축 평당가<input type="number" name="newAptPy" inputmode="numeric" placeholder="2110"></label>
+        </div>
+        <label class="f">해당 동 최고가 단지명<input type="text" name="dongAptName" placeholder="우성"></label>
+        <div class="grid2">
+          <label class="f"><b>해당 동 최고가</b><input type="number" name="dongAptPrice" inputmode="numeric" placeholder="53000"></label>
+          <label class="f">해당 동 평당가<input type="number" name="dongAptPy" inputmode="numeric" placeholder="1690"></label>
+        </div>
+        <label class="f">재건축 대상 단지명<input type="text" name="rebuildAptName" placeholder="월드"></label>
+        <div class="grid2">
+          <label class="f"><b>재건축 최고가</b><input type="number" name="rebuildAptPrice" inputmode="numeric" placeholder="33000"></label>
+          <label class="f">재건축 평당가<input type="number" name="rebuildAptPy" inputmode="numeric" placeholder="2160"></label>
+        </div>
+        <div class="calc" id="calc-gap"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>전세가율</legend>
+        <div class="grid2">
+          <label class="f"><b>신축 전세 최고가(만원)</b><input type="number" name="jeonseNew" inputmode="numeric" placeholder="43000"></label>
+          <label class="f"><b>해당 동 전세 최고가(만원)</b><input type="number" name="jeonseDong" inputmode="numeric" placeholder="32600"></label>
+        </div>
+        <div class="calc" id="calc-jeonse"></div>
+        <p class="hint">전세가율 = 전세 최고가 ÷ 매매 최고가 (자동 계산)</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>공급 · 재건축 여건</legend>
+        <label class="f"><b>향후 3년 내 입주 예정 세대수</b><input type="number" name="supplyUnits" inputmode="numeric" placeholder="없으면 0"></label>
+        <label class="f">입주 계획 메모<input type="text" name="supplyNote" placeholder="29년 내 신규 입주 예정 없음"></label>
+        <label class="f"><b>해당 동 아파트 평균 용적률(%)</b><input type="number" name="farAvg" inputmode="numeric" placeholder="199"></label>
+        <p class="hint">낮을수록 재건축 사업성 유리 (150% 이하 우수 · 200% 내외 보통 · 250% 이상 불리)</p>
+        <label class="f"><b>추진 단계</b>
+          <select name="stage" id="stage-select"></select>
+        </label>
+        <label class="f">추진 단계 메모<input type="text" name="stageNote" placeholder="7개 단지 중 1개 추진위 승인"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>메모</legend>
+        <label class="f"><textarea name="memo" rows="3" placeholder="자유 메모"></textarea></label>
+      </fieldset>
+
+      <div class="btn-row">
+        <button type="submit" class="btn primary" style="flex:1">저장</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 비교 -->
+  <section id="view-compare" class="view">
+    <div id="compare-body"></div>
+  </section>
+
+  <!-- 가이드 -->
+  <section id="view-guide" class="view guide">
+    <div class="card">
+      <h3 style="margin-top:0">📐 종합점수 산정 기준 (100점)</h3>
+      <ul>
+        <li><b>20~40대 비율</b> 15점 — 25%에서 0점, 50%에서 만점</li>
+        <li><b>가격 갭</b> 15점 — 신축 평당가 대비 재건축 평당가가 쌀수록 높음 (안전마진)</li>
+        <li><b>역 이용객</b> 10점 · <b>상권 점포</b> 10점 · <b>신축 평당가</b> 10점</li>
+        <li><b>전세가율</b> 10점 — 50%에서 0점, 80%에서 만점 (실수요·갭투자 용이)</li>
+        <li><b>공급 부담</b> 10점 — 입주 예정 0세대 만점, 5,000세대 이상 0점</li>
+        <li><b>용적률 여유</b> 10점 — 평균 150% 이하 만점, 250% 이상 0점</li>
+        <li><b>인구 규모</b> 5점 · <b>추진 단계</b> 5점</li>
+      </ul>
+      <p>미입력 항목은 0점 처리되며 막대가 회색으로 표시됩니다.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">📊 항목별 자료 얻는 곳</h3>
+      <ul>
+        <li><b>인구/연령</b>: <a href="https://jumin.mois.go.kr">jumin.mois.go.kr</a> → 연령별 인구현황 → 행정동 선택 후 조회</li>
+        <li><b>역 승하차</b>: 공공데이터포털에서 "지하철 승하차" 검색 (서울은 열린데이터광장, 코레일 구간은 철도통계)</li>
+        <li><b>상권 점포 수</b>: 소상공인시장진흥공단 상가(상권)정보 — 공공데이터포털 API 또는 각 지자체 데이터포털</li>
+        <li><b>실거래 최고가/전세</b>: <a href="https://rt.molit.go.kr">국토부 실거래가 공개시스템</a>, 네이버부동산</li>
+        <li><b>입주 예정</b>: 청약홈 · 부동산지인 · 아실(asil) 입주물량 메뉴</li>
+        <li><b>용적률</b>: 네이버부동산 단지정보 또는 K-apt(공동주택관리정보시스템)</li>
+        <li><b>추진 단계</b>: 각 시·군·구청 고시공고, 정비사업 통합홈페이지(서울은 cleanup.seoul.go.kr)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">🤖 자동화 (2단계)</h3>
+      <p>레포의 <code>dongne/fetch_data.py</code> 스크립트로 <b>실거래 최고가 · 전세가율 · 상권 점포 수</b>를
+      공공데이터포털 API로 자동 조회할 수 있습니다.
+      <a href="https://www.data.go.kr">data.go.kr</a> 무료 회원가입 → 활용신청 → 발급받은 인증키 하나로 아래 3개 API를 씁니다:</p>
+      <ol>
+        <li>국토교통부 아파트 매매 실거래가 상세 자료</li>
+        <li>국토교통부 아파트 전월세 실거래가 자료</li>
+        <li>소상공인시장진흥공단 상가(상권)정보</li>
+      </ol>
+      <p>스크립트가 만든 JSON을 아래 "가져오기" 버튼으로 불러오면 자동으로 채워집니다.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">💾 데이터 백업 / 기기 간 이동</h3>
+      <p>데이터는 브라우저(이 기기)에만 저장됩니다. 폰↔PC 이동은 내보내기한 JSON 파일을 카톡/메일로 보내 가져오기 하면 됩니다.</p>
+      <div class="btn-row">
+        <button class="btn" onclick="exportJSON()">⬇️ 내보내기 (JSON)</button>
+        <button class="btn" onclick="document.getElementById('import-file').click()">⬆️ 가져오기</button>
+        <input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(this)">
+      </div>
+    </div>
+  </section>
+</div>
+
+<button class="fab" id="fab" title="동네 추가" onclick="editDong(null)">＋</button>
+
+<nav class="tabs">
+  <button data-v="list" class="on" onclick="go('list')"><span class="ic">🏘️</span>목록</button>
+  <button data-v="compare" onclick="go('compare')"><span class="ic">⚖️</span>비교</button>
+  <button data-v="guide" onclick="go('guide')"><span class="ic">📖</span>가이드</button>
+</nav>
+
+<script>
+"use strict";
+const LS_KEY = "dongne-data-v1";
+const STAGES = ["초기/해당없음","안전진단","추진위원회 승인","조합설립인가","사업시행인가","관리처분인가","이주·철거·착공"];
+
+const SEED = [{
+  id:"seed-bono", name:"본오동", city:"안산시 상록구",
+  popTotal:75256, pop2040:29784,
+  stationName:"상록수역", stationRides:346659, stores:3350,
+  newAptName:"그랑시티자이", newAptPrice:68000, newAptPy:2110,
+  dongAptName:"우성", dongAptPrice:53000, dongAptPy:1690,
+  rebuildAptName:"월드", rebuildAptPrice:33000, rebuildAptPy:2160,
+  jeonseNew:43000, jeonseDong:32600,
+  supplyUnits:0, supplyNote:"29년 내 신규 입주 예정 없음",
+  farAvg:199, stage:2, stageNote:"7개 단지 중 1개 단지 재건축 확정(추진위원회 승인)",
+  memo:"", updatedAt:"2026-07-13"
+}];
+
+let state = { dongs: load(), current: null, editing: null };
+
+function load(){
+  try{ const d = JSON.parse(localStorage.getItem(LS_KEY)); if(Array.isArray(d)) return d; }catch(e){}
+  return JSON.parse(JSON.stringify(SEED));
+}
+function persist(){ localStorage.setItem(LS_KEY, JSON.stringify(state.dongs)); }
+
+/* ───── scoring ───── */
+const lin = (v,a,b) => v==null||isNaN(v) ? null : Math.max(0, Math.min(1, (v-a)/(b-a)));
+const inv = x => x==null ? null : 1-x;
+
+function components(d){
+  const r2040 = (d.pop2040>0 && d.popTotal>0) ? d.pop2040/d.popTotal : null;
+  const jNew  = (d.jeonseNew>0 && d.newAptPrice>0)  ? d.jeonseNew/d.newAptPrice   : null;
+  const jDong = (d.jeonseDong>0 && d.dongAptPrice>0)? d.jeonseDong/d.dongAptPrice : null;
+  const jAvg  = jNew!=null && jDong!=null ? (jNew+jDong)/2 : (jNew ?? jDong);
+  const gap   = (d.newAptPy>0 && d.rebuildAptPy>0) ? (d.newAptPy-d.rebuildAptPy)/d.newAptPy : null;
+  return [
+    {k:"20~40대 비율", max:15, r: lin(r2040,0.25,0.50)},
+    {k:"가격 갭",       max:15, r: gap==null?null:lin(gap,0,0.5)},
+    {k:"역 이용객",     max:10, r: d.stationRides>0 ? lin(Math.log10(d.stationRides),5,7.5) : null},
+    {k:"상권 점포",     max:10, r: lin(d.stores,0,5000)},
+    {k:"신축 평당가",   max:10, r: lin(d.newAptPy,1000,5000)},
+    {k:"전세가율",     max:10, r: jAvg==null?null:lin(jAvg,0.5,0.8)},
+    {k:"공급 부담 없음",max:10, r: d.supplyUnits==null||d.supplyUnits===""?null:inv(lin(d.supplyUnits,0,5000))},
+    {k:"용적률 여유",   max:10, r: d.farAvg>0?inv(lin(d.farAvg,150,250)):null},
+    {k:"인구 규모",     max:5,  r: lin(d.popTotal,10000,100000)},
+    {k:"추진 단계",     max:5,  r: d.stage>=0?d.stage/(STAGES.length-1):null},
+  ].map(c => ({...c, pts: c.r==null?0:Math.round(c.r*c.max*10)/10 }));
+}
+const totalScore = d => Math.round(components(d).reduce((s,c)=>s+c.pts,0));
+function grade(s){
+  if(s>=80) return {g:"S", c:"var(--good)"};
+  if(s>=70) return {g:"A", c:"var(--good)"};
+  if(s>=60) return {g:"B", c:"var(--warn)"};
+  if(s>=45) return {g:"C", c:"var(--serious)"};
+  return {g:"D", c:"var(--critical)"};
+}
+
+/* ───── formatting ───── */
+const nf = new Intl.NumberFormat("ko-KR");
+const num = v => v==null||v===""||isNaN(v) ? "—" : nf.format(v);
+function won(man){ // 만원 → "6.8억"
+  if(man==null||man===""||isNaN(man)) return "—";
+  return man>=10000 ? (man/10000).toFixed(1).replace(/\.0$/,"")+"억" : nf.format(man)+"만";
+}
+const pct = r => r==null ? "—" : (r*100).toFixed(1)+"%";
+const esc = s => String(s??"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+
+/* ───── views ───── */
+function go(v){
+  document.querySelectorAll(".view").forEach(el=>el.classList.remove("on"));
+  document.getElementById("view-"+v).classList.add("on");
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.toggle("on", b.dataset.v===v));
+  document.getElementById("fab").style.display = v==="list" ? "" : "none";
+  if(v==="list") renderList();
+  if(v==="compare") renderCompare();
+  window.scrollTo(0,0);
+}
+
+function renderList(){
+  const box = document.getElementById("dong-list");
+  if(!state.dongs.length){
+    box.innerHTML = `<div class="empty">아직 등록된 동네가 없습니다.<br>오른쪽 아래 ＋ 버튼으로 추가하세요.</div>`;
+    return;
+  }
+  const sorted = [...state.dongs].sort((a,b)=>totalScore(b)-totalScore(a));
+  box.innerHTML = sorted.map(d=>{
+    const s = totalScore(d), g = grade(s);
+    return `<div class="card dong-card" onclick="openDetail('${d.id}')">
+      <div class="dong-head">
+        <h2>${esc(d.name)}<span class="region">${esc(d.city||"")}</span></h2>
+        <span class="grade"><span class="dot" style="background:${g.c}"></span>${g.g}</span>
+        <span class="score-big">${s}<small>/100</small></span>
+      </div>
+      <div class="mini-stats">
+        <div><div class="k">20~40대</div><div class="v">${pct(d.pop2040>0&&d.popTotal>0?d.pop2040/d.popTotal:null)}</div></div>
+        <div><div class="k">신축 최고가</div><div class="v">${won(d.newAptPrice)}</div></div>
+        <div><div class="k">재건축 최고가</div><div class="v">${won(d.rebuildAptPrice)}</div></div>
+        <div><div class="k">추진 단계</div><div class="v">${esc(STAGES[d.stage??0])}</div></div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function openDetail(id){
+  state.current = id;
+  const d = state.dongs.find(x=>x.id===id);
+  if(!d) return;
+  const comps = components(d), s = totalScore(d), g = grade(s);
+  const jNew  = d.jeonseNew>0&&d.newAptPrice>0 ? d.jeonseNew/d.newAptPrice : null;
+  const jDong = d.jeonseDong>0&&d.dongAptPrice>0 ? d.jeonseDong/d.dongAptPrice : null;
+  const gap = d.newAptPy>0&&d.rebuildAptPy>0 ? (d.newAptPy-d.rebuildAptPy)/d.newAptPy : null;
+
+  document.getElementById("detail-body").innerHTML = `
+    <div class="card">
+      <div class="dong-head">
+        <h2 style="font-size:1.3rem">${esc(d.name)}<span class="region">${esc(d.city||"")}</span></h2>
+        <span class="grade"><span class="dot" style="background:${g.c}"></span>${g.g}</span>
+        <span class="score-big">${s}<small>/100</small></span>
+      </div>
+      <div style="margin-top:14px">
+        ${comps.map(c=>`
+          <div class="sbar ${c.r==null?"na":""}">
+            <span class="lab">${c.k}</span>
+            <span class="track"><span class="fill" style="width:${c.r==null?0:Math.max(2,c.r*100)}%"></span></span>
+            <span class="val">${c.r==null?"미입력":c.pts+"/"+c.max}</span>
+          </div>`).join("")}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="mini-stats" style="border:none;padding:0;margin:0;flex-wrap:wrap;gap:12px 0">
+        <div style="flex-basis:33%"><div class="k">총인구</div><div class="v">${num(d.popTotal)}</div></div>
+        <div style="flex-basis:33%"><div class="k">20~40대 비율</div><div class="v">${pct(d.pop2040>0&&d.popTotal>0?d.pop2040/d.popTotal:null)}</div></div>
+        <div style="flex-basis:33%"><div class="k">${esc(d.stationName||"인접역")} 연간</div><div class="v">${num(d.stationRides)}</div></div>
+        <div style="flex-basis:33%"><div class="k">상권 점포</div><div class="v">${num(d.stores)}</div></div>
+        <div style="flex-basis:33%"><div class="k">입주 예정</div><div class="v">${d.supplyUnits==null||d.supplyUnits===""?"—":num(d.supplyUnits)+"세대"}</div></div>
+        <div style="flex-basis:33%"><div class="k">평균 용적률</div><div class="v">${d.farAvg?d.farAvg+"%":"—"}</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tbl-scroll" style="border:none"><table class="cmp" style="min-width:420px">
+        <thead><tr><th>가격</th><th>단지</th><th>최고가</th><th>평당가</th><th>전세가율</th></tr></thead>
+        <tbody>
+          <tr><td>신축</td><td style="text-align:right">${esc(d.newAptName||"—")}</td><td>${won(d.newAptPrice)}</td><td>${num(d.newAptPy)}만</td><td>${pct(jNew)}</td></tr>
+          <tr><td>해당 동</td><td style="text-align:right">${esc(d.dongAptName||"—")}</td><td>${won(d.dongAptPrice)}</td><td>${num(d.dongAptPy)}만</td><td>${pct(jDong)}</td></tr>
+          <tr><td>재건축</td><td style="text-align:right">${esc(d.rebuildAptName||"—")}</td><td>${won(d.rebuildAptPrice)}</td><td>${num(d.rebuildAptPy)}만</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <p class="stage-note">💰 가격 갭(신축 대비 재건축 평당가): <b>${gap==null?"—":(gap*100).toFixed(1)+"%"}</b>
+      ${gap!=null && gap<=0 ? " — 재건축 기대가 이미 가격에 반영된 상태" : ""}</p>
+    </div>
+
+    <div class="card">
+      <p class="stage-note" style="border:none;padding:0;margin:0">🏗️ <b>${esc(STAGES[d.stage??0])}</b> ${esc(d.stageNote||"")}</p>
+      ${d.supplyNote?`<p class="stage-note">🏢 ${esc(d.supplyNote)}</p>`:""}
+      ${d.memo?`<p class="stage-note">📝 ${esc(d.memo)}</p>`:""}
+      <p class="updated">마지막 수정: ${esc(d.updatedAt||"—")}</p>
+    </div>`;
+  go("detail");
+}
+
+function renderCompare(){
+  const box = document.getElementById("compare-body");
+  if(state.dongs.length<1){ box.innerHTML = `<div class="empty">비교할 동네를 먼저 추가하세요.</div>`; return; }
+  const ds = [...state.dongs].sort((a,b)=>totalScore(b)-totalScore(a));
+  const rows = [
+    ["종합점수", d=>totalScore(d), true],
+    ["20~40대 비율", d=>d.pop2040>0&&d.popTotal>0?+(d.pop2040/d.popTotal*100).toFixed(1):null, true, "%"],
+    ["총인구", d=>d.popTotal, true],
+    ["역 승하차(연간)", d=>d.stationRides, true],
+    ["상권 점포", d=>d.stores, true],
+    ["신축 최고가", d=>d.newAptPrice, true, "만"],
+    ["신축 평당가", d=>d.newAptPy, true, "만"],
+    ["재건축 최고가", d=>d.rebuildAptPrice, false, "만"],
+    ["재건축 평당가", d=>d.rebuildAptPy, false, "만"],
+    ["가격 갭", d=>d.newAptPy>0&&d.rebuildAptPy>0?+((d.newAptPy-d.rebuildAptPy)/d.newAptPy*100).toFixed(1):null, true, "%"],
+    ["전세가율(신축)", d=>d.jeonseNew>0&&d.newAptPrice>0?+(d.jeonseNew/d.newAptPrice*100).toFixed(1):null, true, "%"],
+    ["입주 예정 세대", d=>d.supplyUnits, false],
+    ["평균 용적률", d=>d.farAvg, false, "%"],
+    ["추진 단계", d=>STAGES[d.stage??0], null],
+  ];
+  box.innerHTML = `<div class="tbl-scroll"><table class="cmp">
+    <thead><tr><th>항목</th>${ds.map(d=>`<th>${esc(d.name)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(([label, fn, higherBetter, unit])=>{
+      const vals = ds.map(fn);
+      let bestIdx = -1;
+      if(higherBetter!==null && ds.length>1){
+        const nums = vals.map(v=>typeof v==="number"?v:null);
+        const valid = nums.filter(v=>v!=null);
+        if(valid.length>1){
+          const best = higherBetter ? Math.max(...valid) : Math.min(...valid);
+          bestIdx = nums.indexOf(best);
+        }
+      }
+      return `<tr><td>${label}</td>${vals.map((v,i)=>
+        `<td class="${i===bestIdx?"best":""}">${v==null||v===""?"—":(typeof v==="number"?nf.format(v):esc(v))}${v!=null&&v!==""&&unit?unit:""}</td>`
+      ).join("")}</tr>`;
+    }).join("")}</tbody>
+  </table></div>
+  <p class="hint" style="margin-top:8px">파란색 = 해당 항목에서 가장 유리한 동네 · 표는 좌우로 스크롤됩니다</p>`;
+}
+
+/* ───── form ───── */
+const FIELDS = ["name","city","popTotal","pop2040","stationName","stationRides","stores",
+  "newAptName","newAptPrice","newAptPy","dongAptName","dongAptPrice","dongAptPy",
+  "rebuildAptName","rebuildAptPrice","rebuildAptPy","jeonseNew","jeonseDong",
+  "supplyUnits","supplyNote","farAvg","stage","stageNote","memo"];
+const NUMS = new Set(["popTotal","pop2040","stationRides","stores","newAptPrice","newAptPy",
+  "dongAptPrice","dongAptPy","rebuildAptPrice","rebuildAptPy","jeonseNew","jeonseDong",
+  "supplyUnits","farAvg","stage"]);
+
+function editDong(id){
+  state.editing = id;
+  const f = document.getElementById("dong-form");
+  f.reset();
+  const d = id ? state.dongs.find(x=>x.id===id) : null;
+  if(d) FIELDS.forEach(k=>{ if(f[k]!=null && d[k]!=null) f[k].value = d[k]; });
+  updateCalcs();
+  go("form");
+}
+function cancelForm(){ go(state.editing ? "detail" : "list"); }
+
+function saveDong(ev){
+  ev.preventDefault();
+  const f = ev.target, rec = {};
+  FIELDS.forEach(k=>{
+    let v = f[k]?.value?.trim() ?? "";
+    rec[k] = NUMS.has(k) ? (v===""?null:+v) : v;
+  });
+  rec.updatedAt = new Date().toISOString().slice(0,10);
+  if(state.editing){
+    const i = state.dongs.findIndex(x=>x.id===state.editing);
+    state.dongs[i] = {...state.dongs[i], ...rec};
+    persist(); openDetail(state.editing);
+  }else{
+    rec.id = "d"+Date.now();
+    state.dongs.push(rec);
+    persist(); openDetail(rec.id);
+  }
+}
+function removeDong(id){
+  const d = state.dongs.find(x=>x.id===id);
+  if(!d || !confirm(`'${d.name}' 데이터를 삭제할까요?`)) return;
+  state.dongs = state.dongs.filter(x=>x.id!==id);
+  persist(); go("list");
+}
+
+function updateCalcs(){
+  const f = document.getElementById("dong-form");
+  const v = k => { const x = +f[k].value; return x>0 ? x : null; };
+  const el2040 = document.getElementById("calc-2040");
+  el2040.textContent = v("popTotal")&&v("pop2040") ? `→ 20~40대 비율 ${pct(v("pop2040")/v("popTotal"))}` : "";
+  const elGap = document.getElementById("calc-gap");
+  elGap.textContent = v("newAptPy")&&v("rebuildAptPy")
+    ? `→ 가격 갭 ${((v("newAptPy")-v("rebuildAptPy"))/v("newAptPy")*100).toFixed(1)}% (신축 평당가 대비)` : "";
+  const jN = v("jeonseNew")&&v("newAptPrice") ? v("jeonseNew")/v("newAptPrice") : null;
+  const jD = v("jeonseDong")&&v("dongAptPrice") ? v("jeonseDong")/v("dongAptPrice") : null;
+  document.getElementById("calc-jeonse").textContent =
+    (jN||jD) ? `→ 전세가율: 신축 ${pct(jN)} · 해당 동 ${pct(jD)}` : "";
+}
+document.getElementById("dong-form").addEventListener("input", updateCalcs);
+
+/* ───── import / export ───── */
+function exportJSON(){
+  const blob = new Blob([JSON.stringify(state.dongs, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `dongne-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+function importJSON(input){
+  const file = input.files[0]; if(!file) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try{
+      const data = JSON.parse(rd.result);
+      const arr = Array.isArray(data) ? data : [data];
+      let added=0, updated=0;
+      arr.forEach(rec=>{
+        if(!rec.name) return;
+        const i = state.dongs.findIndex(x=>x.name===rec.name);
+        if(i>=0){ state.dongs[i] = {...state.dongs[i], ...rec, id: state.dongs[i].id}; updated++; }
+        else{ rec.id = rec.id || "d"+Date.now()+Math.random().toString(36).slice(2,6); state.dongs.push(rec); added++; }
+      });
+      persist(); renderList(); go("list");
+      alert(`가져오기 완료: 추가 ${added}건, 갱신 ${updated}건`);
+    }catch(e){ alert("JSON 파일을 읽을 수 없습니다: "+e.message); }
+  };
+  rd.readAsText(file);
+  input.value = "";
+}
+
+/* ───── init ───── */
+document.getElementById("stage-select").innerHTML =
+  STAGES.map((s,i)=>`<option value="${i}">${s}</option>`).join("");
+persist();
+renderList();
+</script>
+</body>
+</html>
