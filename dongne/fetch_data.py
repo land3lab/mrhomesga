@@ -108,7 +108,8 @@ def resolve_lawd(umd: str, hint: str = "") -> str:
     xml = get(REGION_URL, {"locatadd_nm": query, "pageNo": 1, "numOfRows": 100, "type": "xml"})
     root = ET.fromstring(xml)
     code = (root.findtext(".//resultCode", "") or "").strip()
-    if code and code not in ("00", "000", "INFO-00"):
+    # 행정표준코드 API는 성공 코드로 "INFO-0"을 쓴다 (오타로 "NOMAL SERVICE" 메시지를 반환함 — 정상)
+    if code and code not in ("00", "000", "INFO-0", "INFO-00"):
         msg = (root.findtext(".//resultMsg", "unknown") or "").strip()
         raise RuntimeError(f"법정동코드 조회 실패 [{code}] {msg}")
     # 대부분의 data.go.kr API는 <item>을 쓰지만 행정표준코드 API는 <row>를 쓴다 — 둘 다 지원
