@@ -78,19 +78,21 @@ dongne/output/auto.json 커밋
 
 ### 설정 (한 번만)
 
-1. [data.go.kr](https://www.data.go.kr) 무료 가입 후 3개 API 활용신청 (즉시 자동 승인)
+1. [data.go.kr](https://www.data.go.kr) 무료 가입 후 4개 API 활용신청 (즉시 자동 승인)
+   - 행정안전부_행정표준코드_법정동코드
    - 국토교통부_아파트 매매 실거래가 상세 자료
    - 국토교통부_아파트 전월세 실거래가 자료
    - 소상공인시장진흥공단_상가(상권)정보
 2. GitHub 리포지토리 **Settings → Secrets and variables → Actions**에
    `DATA_GO_KR_KEY` = 발급받은 인증키 등록
-3. 분석할 동네를 `dongne/targets.json`에 추가:
+3. 분석할 동네를 `dongne/targets.json`에 추가 — **lawd(법정동코드)는 몰라도 된다**,
+   umd 이름으로 자동 조회한다:
 
 ```json
 {
   "name": "본오동",          // 앱에 표시될 동 이름
-  "lawd": "41271",           // 법정동코드 앞 5자리(시군구) — code.go.kr에서 검색
-  "umd": "본오동",           // 법정동 이름 (해당동/재건축 단지 필터)
+  "umd": "본오동",           // 법정동 이름 — 이 이름으로 법정동코드 자동 조회 + 실거래 필터
+  "sigungu": "안산시 상록구", // 동 이름이 여러 지역에 있을 때만 필요한 힌트 (보통 생략 가능)
   "adongPrefix": "본오",     // 행정동 접두어 (본오1·2·3동 점포 합산, 코드 불필요)
   "apts": {
     "new": "그랑시티자이",   // 신축 대표 단지 (시군구 전체에서 검색)
@@ -100,14 +102,19 @@ dongne/output/auto.json 커밋
 }
 ```
 
+동 이름이 전국에서 유일하면 `sigungu` 없이도 자동으로 찾는다. 같은 이름이 여러 시군구에 있으면
+fetch_data.py가 후보 목록과 함께 에러를 내므로, 그때만 `sigungu`를 추가하거나 `lawd`를 직접 넣으면 된다.
+
 등록 후 Actions 탭에서 "동네분석 데이터 자동 갱신"을 **Run workflow**로 즉시 한 번 실행해볼 수 있다.
 로컬에서 돌릴 때는 `.env`에 키를 넣고 `python dongne/fetch_data.py --config dongne/targets.json`.
 실행 로그에 시군구 단지별 최고가 TOP 15가 출력되므로 신축/재건축 단지 선정에도 참고할 수 있다.
+데이터가 갱신되면 Pages 배포도 자동으로 이어서 실행된다 (`dongne-pages.yml`이 `dongne-auto.yml` 완료 이벤트를 받아 재배포).
 
 ### 자동화 커버리지
 
 | 항목 | 자동화 | 방법 |
 |---|---|---|
+| 법정동코드(lawd) | ✅ | fetch_data.py (행정표준코드_법정동코드 API, umd 이름으로 조회) |
 | 실거래 최고가·평당가 | ✅ | fetch_data.py (국토부 실거래가 API) |
 | 전세가율 | ✅ | fetch_data.py (전월세 API, 순수 전세만 집계) |
 | 상권 점포수 | ✅ | fetch_data.py (소상공인 상가정보 API) |

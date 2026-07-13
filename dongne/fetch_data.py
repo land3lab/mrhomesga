@@ -4,13 +4,15 @@
 공공데이터포털(data.go.kr) 인증키 하나로 아래 항목을 자동 조회해서
 앱(index.html)이 읽는 dongne/output/auto.json 을 만들어 줍니다.
 
-  1. 아파트 매매 실거래 최고가·평당가 (국토교통부) → 신축/해당동/재건축 최고가
-  2. 아파트 전세 실거래 최고 보증금 (국토교통부)   → 전세가율 계산
-  3. 상권 점포 수 (소상공인시장진흥공단)           → 동네 상권 점포수
+  1. 법정동코드(시군구코드) — targets.json에 lawd를 안 적어도 umd 이름으로 자동 조회
+  2. 아파트 매매 실거래 최고가·평당가 (국토교통부) → 신축/해당동/재건축 최고가
+  3. 아파트 전세 실거래 최고 보증금 (국토교통부)   → 전세가율 계산
+  4. 상권 점포 수 (소상공인시장진흥공단)           → 동네 상권 점포수
      (시군구 전체를 받아 행정동 이름으로 집계 — 행정동코드 몰라도 됨)
 
 준비 (한 번만):
-  1) https://www.data.go.kr 회원가입(무료) 후 아래 3개 API 활용신청
+  1) https://www.data.go.kr 회원가입(무료) 후 아래 4개 API 활용신청
+     - "행정안전부_행정표준코드_법정동코드"
      - "국토교통부_아파트 매매 실거래가 상세 자료"
      - "국토교통부_아파트 전월세 실거래가 자료"
      - "소상공인시장진흥공단_상가(상권)정보"
@@ -19,10 +21,11 @@
 
 사용:
   # 권장 — targets.json에 등록된 동네 전부 일괄 조회 (GitHub Actions가 매월 실행)
+  # targets.json에 lawd를 안 적으면 umd(+sigungu 힌트)로 자동 조회한다
   python dongne/fetch_data.py --config dongne/targets.json
 
-  # 단발 조회
-  python dongne/fetch_data.py --name 본오동 --lawd 41271 --umd 본오동 --adong-prefix 본오
+  # 단발 조회 (lawd 생략 가능 — umd 이름으로 자동 조회)
+  python dongne/fetch_data.py --name 본오동 --umd 본오동 --sigungu "안산시 상록구" --adong-prefix 본오
 
 출력: dongne/output/auto.json — 앱이 시작할 때 자동으로 불러오고,
       [가이드 → 가져오기]로 수동 임포트도 가능합니다.
@@ -49,6 +52,7 @@ KEY = os.getenv("DATA_GO_KR_KEY", "").strip()
 TRADE_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
 RENT_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent"
 STORE_URL = "https://apis.data.go.kr/B553077/api/open/sdsc2/storeListInDong"
+REGION_URL = "https://apis.data.go.kr/1741000/StanReginCd/getStanReginCdList"
 PAGE = 1000  # 한 페이지 최대 행 수
 
 
@@ -90,6 +94,38 @@ def parse_items(xml_bytes: bytes) -> list[dict]:
         {el.tag: (el.text or "").strip() for el in item}
         for item in root.iter("item")
     ]
+
+
+def resolve_lawd(umd: str, hint: str = "") -> str:
+    """행정표준코드_법정동코드 API로 읍면동 이름 → 시군구코드(LAWD, 5자리) 자동 조회.
+
+    같은 동 이름이 여러 시군구에 있으면 hint(시/군/구 일부 주소)로 좁힌다.
+    그래도 후보가 여럿이면 목록을 보여주고 에러를 낸다 — targets.json에
+    lawd를 직접 넣거나 sigungu 힌트를 추가해서 해결한다.
+    """
+    query = f"{hint} {umd}".strip()
+    xml = get(REGION_URL, {"locatadd_nm": query, "pageNo": 1, "numOfRows": 100, "type": "xml"})
+    root = ET.fromstring(xml)
+    code = root.findtext(".//resultCode", "")
+    if code and code not in ("00", "000", "INFO-00"):
+        msg = root.findtext(".//resultMsg", "unknown")
+        raise RuntimeError(f"법정동코드 조회 실패 [{code}] {msg}")
+    rows = [
+        {el.tag: (el.text or "").strip() for el in item}
+        for item in root.iter("item")
+    ]
+    # 주소의 마지막 단어가 umd와 정확히 일치하는 것만 채택 (부분 문자열 오탐 방지)
+    hits = [r for r in rows if r.get("locatadd_nm", "").split()[-1:] == [umd]]
+    if not hits:
+        raise RuntimeError(f"'{query}' 로 법정동을 찾지 못함 — umd 이름/sigungu 힌트를 확인하세요")
+    candidates = {r["region_cd"][:5]: r["locatadd_nm"] for r in hits}
+    if len(candidates) > 1:
+        lines = "\n".join(f"    - {addr}  (lawd={code})" for code, addr in candidates.items())
+        raise RuntimeError(
+            f"'{umd}' 이름이 여러 지역에 있어 자동 선택 불가.\n{lines}\n"
+            f"  → targets.json에 lawd를 직접 넣거나 sigungu 힌트를 추가하세요"
+        )
+    return next(iter(candidates))
 
 
 def fetch_rtms(url: str, lawd: str, months: int) -> list[dict]:
@@ -175,9 +211,16 @@ def fetch_store_count(signgu: str, adong_prefix: str) -> int:
 
 def build_record(t: dict, months: int) -> dict:
     """대상 동 하나를 조회해 앱 임포트 형식 레코드로 반환."""
-    name, lawd, umd = t["name"], t["lawd"], t.get("umd", "")
+    name, umd = t["name"], t.get("umd", "")
     apts = t.get("apts", {})
     rec: dict = {"name": name}
+
+    lawd = t.get("lawd")
+    if not lawd:
+        hint = t.get("sigungu") or t.get("sido") or ""
+        print(f"\n▶ '{umd or name}' 법정동코드 자동 조회 중…")
+        lawd = resolve_lawd(umd or name, hint)
+        print(f"  ✓ lawd={lawd}")
 
     print(f"\n━━ {name} (시군구 {lawd}) ━━")
     print(f"▶ 매매 실거래 조회 중 ({months}개월)…")
@@ -244,8 +287,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", help="targets.json 경로 (일괄 조회 모드)")
     ap.add_argument("--name", help="동 이름 (단발 조회)")
-    ap.add_argument("--lawd", help="법정동코드 앞 5자리 (시군구)")
+    ap.add_argument("--lawd", help="법정동코드 앞 5자리 (시군구). 생략하면 umd 이름으로 자동 조회")
     ap.add_argument("--umd", default="", help="법정동(읍면동) 이름 필터")
+    ap.add_argument("--sigungu", default="", help="법정동코드 자동 조회용 힌트 (예: '안산시 상록구'). lawd 생략 시 사용")
     ap.add_argument("--adong-prefix", default="", help="상가 집계용 행정동 이름 접두어 (예: 본오)")
     ap.add_argument("--months", type=int, default=0, help="실거래 조회 개월 수 (기본 6)")
     args = ap.parse_args()
@@ -257,12 +301,12 @@ def main() -> None:
         cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
         months = args.months or cfg.get("months", 6)
         targets = cfg["targets"]
-    elif args.name and args.lawd:
+    elif args.name:
         months = args.months or 6
         targets = [{"name": args.name, "lawd": args.lawd, "umd": args.umd,
-                    "adongPrefix": args.adong_prefix}]
+                    "sigungu": args.sigungu, "adongPrefix": args.adong_prefix}]
     else:
-        ap.error("--config 또는 --name/--lawd 를 지정하세요")
+        ap.error("--config 또는 --name 을 지정하세요")
 
     records = []
     for t in targets:
