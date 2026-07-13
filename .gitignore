@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
-output/
+/output/
 *.log
 .venv/
 venv/
