@@ -55,6 +55,10 @@ STORE_URL = "https://apis.data.go.kr/B553077/api/open/sdsc2/storeListInDong"
 REGION_URL = "https://apis.data.go.kr/1741000/StanReginCd/getStanReginCdList"
 PAGE = 1000  # 한 페이지 최대 행 수
 
+SIDO_LIST = ["서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시",
+    "울산광역시", "세종특별자치시", "경기도", "강원특별자치도", "충청북도", "충청남도",
+    "전북특별자치도", "전라남도", "경상북도", "경상남도", "제주특별자치도"]
+
 
 def get(url: str, params: dict) -> bytes:
     qs = urllib.parse.urlencode(params)
@@ -129,6 +133,72 @@ def resolve_lawd(umd: str, hint: str = "") -> str:
             f"  → targets.json에 lawd를 직접 넣거나 sigungu 힌트를 추가하세요"
         )
     return next(iter(candidates))
+
+
+def _region_rows(locatadd_nm: str) -> list[dict]:
+    """법정동코드 API를 완전히 페이지 순회해 원본 행 전체를 반환."""
+    rows: list[dict] = []
+    page = 1
+    while True:
+        xml = get(REGION_URL, {"locatadd_nm": locatadd_nm, "pageNo": page, "numOfRows": 1000, "type": "xml"})
+        root = ET.fromstring(xml)
+        code = (root.findtext(".//resultCode", "") or "").strip()
+        if code and code not in ("00", "000", "INFO-0", "INFO-00"):
+            msg = (root.findtext(".//resultMsg", "") or "").strip()
+            raise RuntimeError(f"법정동코드 조회 실패 [{code}] {msg}")
+        chunk = [
+            {el.tag: (el.text or "").strip() for el in item}
+            for item in list(root.iter("item")) + list(root.iter("row"))
+        ]
+        rows.extend(chunk)
+        total = int((root.findtext(".//totalCount", "0") or "0").strip() or 0)
+        if not chunk or len(rows) >= total:
+            break
+        page += 1
+    return rows
+
+
+def build_region_index() -> dict:
+    """시/도 → 시/군/구 → 읍/면/동(+lawd) 계층 인덱스를 통째로 만든다.
+
+    앱이 매번 실시간으로 법정동코드 API를 페이지 순회하면 느리므로,
+    이 정적 인덱스를 미리 만들어 배포하면 앱은 그냥 파일 하나만 읽으면 된다.
+    행정구역은 거의 바뀌지 않으니 자주 다시 만들 필요는 없다.
+    """
+    index: dict = {}
+    for sido in SIDO_LIST:
+        print(f"▶ {sido} 조회 중…")
+        rows = _region_rows(sido)
+        rows = [r for r in rows if len(r.get("region_cd", "")) == 10
+                and r.get("locatadd_nm", "").startswith(sido + " ")]
+
+        sgg_by_code: dict[str, str] = {}
+        for r in rows:
+            rc = r["region_cd"]
+            if rc[2:5] != "000" and rc[5:8] == "000" and rc[8:10] == "00":  # 시군구 레벨
+                sgg_by_code[rc[:5]] = r["locatadd_nm"][len(sido) + 1:].strip()
+
+        sido_map = {name: {"lawd": code, "umd": []} for code, name in sgg_by_code.items()}
+        for r in rows:
+            rc = r["region_cd"]
+            if rc[5:8] == "000" or rc[8:10] != "00":  # 읍/면/동 레벨만
+                continue
+            sgg_name = sgg_by_code.get(rc[:5])
+            if not sgg_name:
+                continue
+            prefix = f"{sido} {sgg_name} "
+            addr = r["locatadd_nm"]
+            if not addr.startswith(prefix):
+                continue
+            umd_name = addr[len(prefix):].strip()
+            if umd_name:
+                sido_map[sgg_name]["umd"].append(umd_name)
+
+        for v in sido_map.values():
+            v["umd"] = sorted(set(v["umd"]))
+        index[sido] = sido_map
+        print(f"  ✓ 시군구 {len(sido_map)}개")
+    return index
 
 
 def fetch_rtms(url: str, lawd: str, months: int) -> list[dict]:
@@ -295,10 +365,21 @@ def main() -> None:
     ap.add_argument("--sigungu", default="", help="법정동코드 자동 조회용 힌트 (예: '안산시 상록구'). lawd 생략 시 사용")
     ap.add_argument("--adong-prefix", default="", help="상가 집계용 행정동 이름 접두어 (예: 본오)")
     ap.add_argument("--months", type=int, default=0, help="실거래 조회 개월 수 (기본 6)")
+    ap.add_argument("--build-region-index", action="store_true",
+                     help="시/도-시/군/구-읍/면/동 인덱스(output/region_index.json)를 새로 생성 (앱의 지역 선택을 빠르게 함)")
     args = ap.parse_args()
 
     if not KEY:
         sys.exit("환경변수 DATA_GO_KR_KEY 가 없습니다. .env 또는 GitHub Secrets에 추가하세요.")
+
+    if args.build_region_index:
+        index = build_region_index()
+        out_dir = Path(__file__).parent / "output"
+        out_dir.mkdir(exist_ok=True)
+        out = out_dir / "region_index.json"
+        out.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"\n✅ 저장: {out}")
+        return
 
     if args.config:
         cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))

@@ -563,7 +563,7 @@ function editDong(id){
   document.getElementById("toggle-sigungu").innerHTML = `<span class="hint">시/도를 먼저 선택하세요</span>`;
   document.getElementById("toggle-umd").innerHTML = `<span class="hint">시/군/구를 먼저 선택하세요</span>`;
   if(d && d.sido && d.city){
-    loadSigungu(d.sido).then(()=>{ if(d.lawd) loadUmd(`${d.sido} ${d.city}`, d.lawd); });
+    loadSigungu(d.sido).then(()=>{ if(d.lawd) loadUmd(d.sido, d.city, d.lawd); });
   }
   refreshRegionHint();
   go("form");
@@ -684,40 +684,93 @@ function refreshRegionHint(){
     txt ? `선택됨: ${txt}${f.lawd.value ? ` (lawd=${f.lawd.value})` : ""}` : "";
 }
 
+// 지역(시/도·시/군/구·읍/면/동) 선택을 바꾸면 이전 지역의 값이 남아 헷갈리지 않도록
+// 가격/단지명/전세/인구/상권 등 지역 종속 필드를 비운다.
+function clearRegionDependentFields(){
+  const f = document.getElementById("dong-form");
+  ["popTotal","pop2040","stationName","stationRides","stores",
+   "newAptName","newAptPrice","newAptPy","dongAptName","dongAptPrice","dongAptPy",
+   "rebuildAptName","rebuildAptPrice","rebuildAptPy","jeonseNew","jeonseDong"]
+    .forEach(k=>{ if(f[k]) f[k].value = ""; });
+  document.getElementById("fetch-status").textContent = "";
+  updateCalcs();
+}
+
 function renderSidoToggles(){
   const f = document.getElementById("dong-form");
   renderToggles("toggle-sido", SIDO.map(s=>({label:s})), f.sido.value, (it)=>{
     const f = document.getElementById("dong-form");
     f.sido.value = it.label; f.city.value=""; f.name.value=""; f.lawd.value="";
     document.getElementById("toggle-umd").innerHTML = `<span class="hint">시/군/구를 먼저 선택하세요</span>`;
+    clearRegionDependentFields();
     refreshRegionHint();
     loadSigungu(it.label);
   });
 }
 
+// 시/도-시/군/구-읍/면/동 정적 인덱스 (output/region_index.json, 매월 배치가 생성).
+// 있으면 즉시(네트워크 없이) 토글을 채우고, 없거나 실패하면 실시간 API로 폴백한다.
+let REGION_INDEX = null;
+async function loadRegionIndex(){
+  try{
+    const res = await fetch("output/region_index.json", {cache:"no-store"});
+    if(res.ok) REGION_INDEX = await res.json();
+  }catch(e){ /* 폴백 경로가 처리하므로 조용히 무시 */ }
+}
+
 async function loadSigungu(sidoName){
   const box = document.getElementById("toggle-sigungu");
-  box.innerHTML = `<span class="hint">불러오는 중…</span>`;
+  const f = document.getElementById("dong-form");
+
+  if(REGION_INDEX && REGION_INDEX[sidoName]){
+    const uniq = Object.entries(REGION_INDEX[sidoName])
+      .map(([name, v])=>({label:name, sgg:v.lawd}))
+      .sort((a,b)=>a.label.localeCompare(b.label,"ko"));
+    renderToggles("toggle-sigungu", uniq, f.city.value, (it)=>{
+      const f = document.getElementById("dong-form");
+      f.city.value = it.label; f.lawd.value = it.sgg; f.name.value = "";
+      clearRegionDependentFields();
+      refreshRegionHint();
+      loadUmd(sidoName, it.label, it.sgg);
+    });
+    return;
+  }
+
+  box.innerHTML = `<span class="hint">불러오는 중… (지역 인덱스가 아직 없어 느릴 수 있음)</span>`;
   try{
     const rows = await regionRows(sidoName);
     const items = rows
       .filter(r=>levelOf(r.region_cd)==="sigungu" && (r.locatadd_nm||"").startsWith(sidoName+" "))
       .map(r=>({label:r.locatadd_nm.slice(sidoName.length+1).trim(), addr:r.locatadd_nm, sgg:r.region_cd.slice(0,5)}));
     const uniq = [...new Map(items.map(i=>[i.sgg,i])).values()].sort((a,b)=>a.label.localeCompare(b.label,"ko"));
-    const f = document.getElementById("dong-form");
     renderToggles("toggle-sigungu", uniq, f.city.value, (it)=>{
       const f = document.getElementById("dong-form");
       f.city.value = it.label; f.lawd.value = it.sgg; f.name.value = "";
+      clearRegionDependentFields();
       refreshRegionHint();
-      loadUmd(it.addr, it.sgg);
+      loadUmd(sidoName, it.label, it.sgg, it.addr);
     });
   }catch(e){
     box.innerHTML = `<span class="hint">⚠ 조회 실패: ${esc(e.message)}</span>`;
   }
 }
 
-async function loadUmd(sigunguAddr, sggCode){
+async function loadUmd(sidoName, sggName, sggCode, fallbackAddr){
   const box = document.getElementById("toggle-umd");
+  const f = document.getElementById("dong-form");
+
+  if(REGION_INDEX && REGION_INDEX[sidoName] && REGION_INDEX[sidoName][sggName]){
+    const uniq = (REGION_INDEX[sidoName][sggName].umd || []).map(name=>({label:name}));
+    renderToggles("toggle-umd", uniq, f.name.value, (it)=>{
+      const f = document.getElementById("dong-form");
+      f.name.value = it.label;
+      clearRegionDependentFields();
+      refreshRegionHint();
+    });
+    return;
+  }
+
+  const sigunguAddr = fallbackAddr || `${sidoName} ${sggName}`;
   box.innerHTML = `<span class="hint">불러오는 중…</span>`;
   try{
     const rows = await regionRows(sigunguAddr);
@@ -726,10 +779,10 @@ async function loadUmd(sigunguAddr, sggCode){
       .map(r=>({label:r.locatadd_nm.slice(sigunguAddr.length+1).trim()}))
       .filter(it=>it.label);
     const uniq = [...new Map(items.map(i=>[i.label,i])).values()].sort((a,b)=>a.label.localeCompare(b.label,"ko"));
-    const f = document.getElementById("dong-form");
     renderToggles("toggle-umd", uniq, f.name.value, (it)=>{
       const f = document.getElementById("dong-form");
       f.name.value = it.label;
+      clearRegionDependentFields();
       refreshRegionHint();
     });
   }catch(e){
@@ -920,6 +973,7 @@ document.getElementById("stage-select").innerHTML =
 persist();
 renderList();
 loadAutoData();
+loadRegionIndex();
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", () => {
