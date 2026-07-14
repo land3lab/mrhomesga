@@ -231,7 +231,7 @@ td.best{color:var(--accent-deep);font-weight:800}
           <label class="f"><b>해당 동 최고가</b><input type="number" name="dongAptPrice" inputmode="numeric" placeholder="예: 53000"></label>
           <label class="f">해당 동 평당가<input type="number" name="dongAptPy" inputmode="numeric" placeholder="예: 1690"></label>
         </div>
-        <label class="f"><b>재건축 대상 단지명 *</b> <span class="hint">(직접 입력 — 어떤 단지를 재건축 대상으로 볼지는 자동 판단 불가)</span><input type="text" name="rebuildAptName" required placeholder="예: 월드"></label>
+        <label class="f"><b>재건축 대상 단지명 *</b> <span class="hint">(직접 입력 — 어떤 단지를 재건축 대상으로 볼지는 자동 판단 불가. 검색은 최대 2년까지 확대하고, 그래도 없으면 호갱노노 등에서 확인해 아래 값을 직접 입력)</span><input type="text" name="rebuildAptName" required placeholder="예: 월드"></label>
         <div class="grid2">
           <label class="f"><b>재건축 최고가</b><input type="number" name="rebuildAptPrice" inputmode="numeric" placeholder="예: 33000"></label>
           <label class="f">재건축 평당가<input type="number" name="rebuildAptPy" inputmode="numeric" placeholder="예: 2160"></label>
@@ -871,6 +871,19 @@ function pickApt(agg, keyword){
   if(!hits.length) return null;
   return hits.reduce((best,cur)=>cur[1].n>best[1].n?cur:best);
 }
+// 신축 대표 후보 순위: 건축년도가 가장 최근이면서(거래 2건 이상 우선) 노이즈가 적은 단지.
+function rankNewCandidates(trades){
+  const withBuildYear = Object.entries(trades).filter(([,v])=>v.buildYear>0);
+  const solidBuilds = withBuildYear.filter(([,v])=>v.n>=2);
+  return (solidBuilds.length ? solidBuilds : withBuildYear)
+    .sort((a,b)=>(b[1].buildYear-a[1].buildYear) || (b[1].n-a[1].n));
+}
+async function fetchTradesAndRents(lawd, umd, months){
+  const trades = aggTrades(await rtmsItems(TRADE_URL, lawd, months));
+  const tradesUmd = Object.fromEntries(Object.entries(trades).filter(([,v])=>v.umd===umd));
+  const rents = aggRents(await rtmsItems(RENT_URL, lawd, months));
+  return {trades, tradesUmd, rents};
+}
 async function fetchStoreCount(signgu, prefix){
   const page1 = await (await fetch(`${STORE_URL}?divId=signguCd&key=${signgu}&type=json&numOfRows=1000&pageNo=1&serviceKey=${dataGoKey()}`)).json();
   const body1 = page1.body || {};
@@ -971,22 +984,30 @@ async function fetchInfo(){
   btn.disabled = true;
   try{
     status.textContent = "▶ 매매 실거래 조회 중… (최근 6개월)";
-    const tradeItems = await rtmsItems(TRADE_URL, lawd, 6);
-    const trades = aggTrades(tradeItems);
-    const tradesUmd = Object.fromEntries(Object.entries(trades).filter(([,v])=>v.umd===umd));
-
-    status.textContent = "▶ 전세 실거래 조회 중…";
-    const rents = aggRents(await rtmsItems(RENT_URL, lawd, 6));
+    let {trades, tradesUmd, rents} = await fetchTradesAndRents(lawd, umd, 6);
 
     const notes = [];
+    const rkw = f.rebuildAptName.value.trim();
+
+    let newRanked = rankNewCandidates(trades);
+    let dongEntries = Object.entries(tradesUmd);
+    let rebuildHit = rkw ? pickApt(tradesUmd, rkw) : null;
+
+    // 6개월 내에 필요한 자료가 없으면 최대 2년까지 확대해서 다시 찾는다
+    // (매매는 드물게 일어나서 6개월 안에 거래가 아예 없는 단지가 흔하다).
+    if(!newRanked.length || !dongEntries.length || (rkw && !rebuildHit)){
+      status.textContent = "▶ 6개월 내 자료가 부족해 최대 2년까지 확대 조회 중…";
+      try{
+        ({trades, tradesUmd, rents} = await fetchTradesAndRents(lawd, umd, 24));
+        newRanked = rankNewCandidates(trades);
+        dongEntries = Object.entries(tradesUmd);
+        if(rkw) rebuildHit = pickApt(tradesUmd, rkw);
+      }catch(e){ notes.push(`2년 확대 조회 실패: ${e.message}`); }
+    }
 
     // 신축 대표: 검색어 없이 자동 선정 — 시군구 전체에서 건축년도가 가장 최근이면서
     // 거래가 있는(노이즈 방지로 2건 이상 우선) 단지.
-    const byRecency = (a,b) => (b[1].buildYear-a[1].buildYear) || (b[1].n-a[1].n);
-    const withBuildYear = Object.entries(trades).filter(([,v])=>v.buildYear>0);
-    const solidBuilds = withBuildYear.filter(([,v])=>v.n>=2);
-    const newRanked = (solidBuilds.length ? solidBuilds : withBuildYear).sort(byRecency);
-    if(!newRanked.length){ notes.push("신축 대표 단지를 찾지 못함 (최근 6개월 거래 없음)"); }
+    if(!newRanked.length){ notes.push("신축 대표 단지를 찾지 못함 (최근 2년 내 거래 없음)"); }
     else{
       const [apt, v] = newRanked[0];
       setField(f, "newAptName", apt); setField(f, "newAptPrice", v.max); setField(f, "newAptPy", v.py);
@@ -994,8 +1015,7 @@ async function fetchInfo(){
     }
 
     // 해당 동 최고가: 선택한 읍/면/동 안에서 최고가 단지 자동 선정
-    const dongEntries = Object.entries(tradesUmd);
-    if(!dongEntries.length){ notes.push("해당 동 최근 거래를 찾지 못함"); }
+    if(!dongEntries.length){ notes.push("해당 동 최근 거래를 찾지 못함 (최근 2년 내 거래 없음)"); }
     else{
       const [apt, v] = dongEntries.reduce((best,cur)=>cur[1].max>best[1].max?cur:best);
       setField(f, "dongAptName", apt); setField(f, "dongAptPrice", v.max); setField(f, "dongAptPy", v.py);
@@ -1003,15 +1023,12 @@ async function fetchInfo(){
     }
 
     // 재건축 대상: 자동 판단이 불가능한 항목이라 사용자가 입력한 이름으로 검색만 한다.
-    const rkw = f.rebuildAptName.value.trim();
     if(!rkw){ notes.push("재건축 대상 단지명이 비어 있어 건너뜀"); }
-    else{
-      const hit = pickApt(tradesUmd, rkw);
-      if(!hit){ notes.push(`'${rkw}'(재건축) 최근 거래를 찾지 못함`); }
-      else{
-        const [apt, v] = hit;
-        setField(f, "rebuildAptName", apt); setField(f, "rebuildAptPrice", v.max); setField(f, "rebuildAptPy", v.py);
-      }
+    else if(!rebuildHit){
+      notes.push(`'${rkw}'(재건축) 최근 2년 내 거래를 찾지 못함 — 호갱노노 등에서 시세를 확인해 직접 입력하세요`);
+    }else{
+      const [apt, v] = rebuildHit;
+      setField(f, "rebuildAptName", apt); setField(f, "rebuildAptPrice", v.max); setField(f, "rebuildAptPy", v.py);
     }
 
     const prefix = f.adongPrefix.value.trim() || umd.replace(/\d+동$/,"").replace(/동$/,"");
