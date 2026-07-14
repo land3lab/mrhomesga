@@ -139,7 +139,20 @@ table.cmp tr:last-child td{border-bottom:none}
 td.best{color:var(--accent-deep);font-weight:800}
 
 /* ─ misc ─ */
-.empty{padding:44px 12px;text-align:center;color:var(--muted);font-size:.9rem}
+.empty{padding:24px 4px 8px;text-align:left;color:var(--ink2);font-size:.88rem}
+.empty h3{font-size:1.05rem;color:var(--ink);margin-bottom:10px}
+.empty ol{padding-left:20px;margin:8px 0 14px}
+.empty li{margin:6px 0}
+.empty .tip{font-size:.8rem;color:var(--muted);border-top:1px solid var(--grid);padding-top:10px;margin-top:6px}
+.recent-banner{margin:10px 0 4px}
+.recent-banner .recent-label{font-size:.72rem;color:var(--muted);margin-bottom:6px;font-weight:700}
+.recent-chips{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.chip{
+  flex:0 0 auto;padding:8px 14px;border-radius:999px;border:1px solid var(--border);
+  background:var(--surface);color:var(--ink);font:inherit;font-size:.82rem;font-weight:700;cursor:pointer;
+  white-space:nowrap;
+}
+.chip:active{transform:scale(.97)}
 .guide h3{font-size:.95rem;margin:18px 0 6px}
 .guide p,.guide li{font-size:.85rem;color:var(--ink2)}
 .guide ul,.guide ol{padding-left:20px;margin:6px 0}
@@ -160,6 +173,7 @@ td.best{color:var(--accent-deep);font-weight:800}
 
   <!-- 목록 -->
   <section id="view-list" class="view on">
+    <div id="recent-banner" class="recent-banner" style="display:none"></div>
     <div id="dong-list"></div>
   </section>
 
@@ -375,13 +389,32 @@ const SEED = [{
   memo:"", updatedAt:"2026-07-13"
 }];
 
-let state = { dongs: load(), current: null, editing: null };
+const RECENT_KEY = "dongne-recent-v1";
+let state = { dongs: load(), current: null, editing: null, recentViews: loadRecent() };
 
 function load(){
   try{ const d = JSON.parse(localStorage.getItem(LS_KEY)); if(Array.isArray(d)) return d; }catch(e){}
   return JSON.parse(JSON.stringify(SEED));
 }
 function persist(){ localStorage.setItem(LS_KEY, JSON.stringify(state.dongs)); }
+
+function loadRecent(){
+  try{ const d = JSON.parse(localStorage.getItem(RECENT_KEY)); if(Array.isArray(d)) return d; }catch(e){}
+  return [];
+}
+function pushRecent(id){
+  state.recentViews = [id, ...state.recentViews.filter(x=>x!==id)].slice(0,8);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(state.recentViews));
+}
+function renderRecentBanner(){
+  const box = document.getElementById("recent-banner");
+  const items = state.recentViews.map(id=>state.dongs.find(x=>x.id===id)).filter(Boolean);
+  if(!items.length){ box.style.display = "none"; box.innerHTML = ""; return; }
+  box.style.display = "";
+  box.innerHTML = `<div class="recent-label">🕘 최근 조회</div><div class="recent-chips">` +
+    items.map(d=>`<button type="button" class="chip" onclick="openDetail('${d.id}')">${esc(d.name)}</button>`).join("") +
+    `</div>`;
+}
 
 /* ───── scoring ───── */
 const lin = (v,a,b) => v==null||isNaN(v) ? null : Math.max(0, Math.min(1, (v-a)/(b-a)));
@@ -438,8 +471,20 @@ function go(v){
 
 function renderList(){
   const box = document.getElementById("dong-list");
+  renderRecentBanner();
   if(!state.dongs.length){
-    box.innerHTML = `<div class="empty">아직 등록된 동네가 없습니다.<br>오른쪽 아래 ＋ 버튼으로 추가하세요.</div>`;
+    box.innerHTML = `<div class="empty">
+      <h3>👋 재건둥이 사용법</h3>
+      <ol>
+        <li>오른쪽 아래 <b>＋</b> 버튼으로 동네 추가</li>
+        <li><b>시/도 → 시/군/구 → 읍/면/동</b>을 순서대로 선택 (법정동코드 몰라도 됨)</li>
+        <li>인접역 이름 · 재건축 대상 단지명 입력 (빨간 테두리 = 필수)</li>
+        <li>폼 맨 아래 <b>🔄 정보 불러오기</b> 클릭 → 실거래·전세·상권·인구·역승하차 자동 채움</li>
+        <li>부족한 값은 직접 채우고 <b>저장</b></li>
+      </ol>
+      <p class="tip">💡 등록한 동네는 종합점수(100점)로 자동 순위가 매겨지고, [비교] 탭에서 항목별로 나란히 비교할 수 있습니다.
+      자세한 산정 기준은 [가이드] 탭 참고.</p>
+    </div>`;
     return;
   }
   const sorted = [...state.dongs].sort((a,b)=>totalScore(b)-totalScore(a));
@@ -465,6 +510,7 @@ function openDetail(id){
   state.current = id;
   const d = state.dongs.find(x=>x.id===id);
   if(!d) return;
+  pushRecent(id);
   const comps = components(d), s = totalScore(d), g = grade(s);
   const jNew  = d.jeonseNew>0&&d.newAptPrice>0 ? d.jeonseNew/d.newAptPrice : null;
   const jDong = d.jeonseDong>0&&d.dongAptPrice>0 ? d.jeonseDong/d.dongAptPrice : null;
@@ -782,6 +828,21 @@ async function loadStationsIndex(){
     const res = await fetch("output/stations.json", {cache:"no-store"});
     if(res.ok) STATIONS_INDEX = await res.json();
   }catch(e){ /* 없으면 그냥 직접 입력만 가능 */ }
+}
+
+// 역 이름 → 실제 연간 승하차 인원(서울교통공사+코레일 수도권, 정적 집계).
+// 있으면 이 값을 그대로 쓰고, 없는 역만 실시간 API(최근 7일 추정치)로 보완한다.
+let STATION_RIDES = null;
+async function loadStationRides(){
+  try{
+    const res = await fetch("output/station_rides.json", {cache:"no-store"});
+    if(res.ok) STATION_RIDES = await res.json();
+  }catch(e){ /* 없으면 실시간 추정치로 폴백 */ }
+}
+function lookupStationRides(stationName){
+  if(!STATION_RIDES) return null;
+  const base = stationName.replace(/\(\d+\)\s*$/, "").replace(/역$/, "").trim();
+  return STATION_RIDES[base] ?? null;
 }
 function renderStationToggle(sidoName, sggName, selectedName){
   const box = document.getElementById("toggle-station");
@@ -1111,12 +1172,18 @@ async function fetchInfo(){
 
     const stationName = f.stationName.value.trim();
     if(stationName){
-      status.textContent = "▶ 역 승하차 조회 중… (서울교통공사 노선만 지원)";
-      try{
-        const ride = await fetchStationRides(stationName);
-        if(ride) setField(f, "stationRides", ride.annualEstimate);
-        else notes.push("역 승하차 데이터 없음(서울교통공사 관할 역이 아니거나 최근 1주일 자료 없음)");
-      }catch(e){ notes.push(`역 승하차 조회 실패: ${e.message}`); }
+      const staticRides = lookupStationRides(stationName);
+      if(staticRides != null){
+        // 서울교통공사+코레일 수도권 정적 집계(실제 연간치)가 있으면 그대로 사용 — 실시간 API보다 정확함
+        setField(f, "stationRides", staticRides);
+      }else{
+        status.textContent = "▶ 역 승하차 조회 중… (서울교통공사 노선만 지원, 최근 1주일 기반 추정치)";
+        try{
+          const ride = await fetchStationRides(stationName);
+          if(ride) setField(f, "stationRides", ride.annualEstimate);
+          else notes.push("역 승하차 데이터 없음(수도권 정적 집계·서울교통공사 실시간 API 둘 다 커버 못 하는 역)");
+        }catch(e){ notes.push(`역 승하차 조회 실패: ${e.message}`); }
+      }
     }
 
     updateCalcs();
@@ -1201,6 +1268,7 @@ renderList();
 loadAutoData();
 loadRegionIndex();
 loadStationsIndex();
+loadStationRides();
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", () => {
