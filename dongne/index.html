@@ -216,6 +216,7 @@ td.best{color:var(--accent-deep);font-weight:800}
           <label class="f"><b>인접역 이름 *</b><input type="text" name="stationName" required placeholder="예: 상록수역"></label>
           <label class="f"><b>연간 승하차 인원</b><input type="number" name="stationRides" inputmode="numeric" placeholder="예: 346659"></label>
         </div>
+        <div class="toggle-group" id="toggle-station"><span class="hint">읍/면/동을 선택하면 근처 역이 뜹니다</span></div>
         <label class="f"><b>동네 상권 점포 수</b><input type="number" name="stores" inputmode="numeric" placeholder="예: 3350"></label>
       </fieldset>
 
@@ -747,6 +748,7 @@ function clearRegionDependentFields(){
   ["toggle-newApt","toggle-dongApt","toggle-rebuildApt"].forEach(id=>{
     document.getElementById(id).innerHTML = `<span class="hint">정보 불러오기 후 여기서 단지를 고를 수 있음</span>`;
   });
+  document.getElementById("toggle-station").innerHTML = `<span class="hint">읍/면/동을 선택하면 근처 역이 뜹니다</span>`;
   document.getElementById("fetch-status").textContent = "";
   updateCalcs();
 }
@@ -771,6 +773,33 @@ async function loadRegionIndex(){
     const res = await fetch("output/region_index.json", {cache:"no-store"});
     if(res.ok) REGION_INDEX = await res.json();
   }catch(e){ /* 폴백 경로가 처리하므로 조용히 무시 */ }
+}
+
+// 시/도 → 시/군/구 별 인접역 이름 목록 (국가철도공단 역사정보, 연 1회 갱신되는 정적 파일 기반).
+let STATIONS_INDEX = null;
+async function loadStationsIndex(){
+  try{
+    const res = await fetch("output/stations.json", {cache:"no-store"});
+    if(res.ok) STATIONS_INDEX = await res.json();
+  }catch(e){ /* 없으면 그냥 직접 입력만 가능 */ }
+}
+function renderStationToggle(sidoName, sggName, selectedName){
+  const box = document.getElementById("toggle-station");
+  const list = STATIONS_INDEX?.[sidoName]?.[sggName] || STATIONS_INDEX?.[sidoName]?.["_기타"];
+  if(!list || !list.length){ box.innerHTML = `<span class="hint">이 지역 역 정보 없음 — 직접 입력</span>`; return; }
+  box.innerHTML = list.map(name =>
+    `<button type="button" class="toggle-btn${name===selectedName?" on":""}">${esc(name)}</button>`
+  ).join("");
+  [...box.children].forEach((btn,i)=>{
+    btn.onclick = ()=>{
+      [...box.children].forEach(b=>b.classList.remove("on"));
+      btn.classList.add("on");
+      const f = document.getElementById("dong-form");
+      f.stationName.value = list[i];
+      f.stationName.classList.remove("invalid");
+      updateCalcs();
+    };
+  });
 }
 
 async function loadSigungu(sidoName){
@@ -813,6 +842,7 @@ async function loadSigungu(sidoName){
 async function loadUmd(sidoName, sggName, sggCode, fallbackAddr){
   const box = document.getElementById("toggle-umd");
   const f = document.getElementById("dong-form");
+  renderStationToggle(sidoName, sggName, f.stationName.value);
 
   if(REGION_INDEX && REGION_INDEX[sidoName] && REGION_INDEX[sidoName][sggName]){
     const uniq = (REGION_INDEX[sidoName][sggName].umd || []).map(name=>({label:name}));
@@ -1170,6 +1200,7 @@ persist();
 renderList();
 loadAutoData();
 loadRegionIndex();
+loadStationsIndex();
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", () => {
