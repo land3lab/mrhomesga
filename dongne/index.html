@@ -102,11 +102,14 @@ nav.tabs button.on{color:var(--accent);font-weight:700}
 .btn.danger{color:var(--critical)}
 .btn.small{padding:7px 12px;font-size:.8rem}
 .btn-row{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap}
-.fab{
-  position:fixed;right:16px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:25;
-  width:54px;height:54px;border-radius:50%;border:none;background:var(--accent);color:#fff;
-  font-size:1.7rem;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25);
+.add-item{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:16px;margin:12px 0;border:2px dashed var(--baseline);border-radius:14px;
+  color:var(--accent);font-weight:700;font-size:.95rem;cursor:pointer;background:none;width:100%;font:inherit;
 }
+.add-item:active{transform:scale(.985)}
+.compare-mini{margin-top:18px;padding-top:14px;border-top:1px solid var(--grid)}
+.compare-mini h3{font-size:.85rem;color:var(--ink2);margin-bottom:10px;font-weight:800}
 fieldset{border:1px solid var(--border);border-radius:12px;padding:12px 14px 14px;margin:14px 0;background:var(--surface)}
 legend{font-size:.8rem;font-weight:800;color:var(--accent-deep);padding:0 6px}
 label.f{display:block;margin:10px 0 0;font-size:.78rem;color:var(--ink2)}
@@ -368,8 +371,6 @@ td.best{color:var(--accent-deep);font-weight:800}
   </section>
 </div>
 
-<button class="fab" id="fab" title="동네 추가" onclick="editDong(null)">＋</button>
-
 <nav class="tabs">
   <button data-v="list" class="on" onclick="go('list')"><span class="ic">🏘️</span>목록</button>
   <button data-v="compare" onclick="go('compare')"><span class="ic">⚖️</span>비교</button>
@@ -469,7 +470,6 @@ function go(v){
   document.querySelectorAll(".view").forEach(el=>el.classList.remove("on"));
   document.getElementById("view-"+v).classList.add("on");
   document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.toggle("on", b.dataset.v===v));
-  document.getElementById("fab").style.display = v==="list" ? "" : "none";
   if(v==="list") renderList();
   if(v==="compare") renderCompare();
   window.scrollTo(0,0);
@@ -482,7 +482,7 @@ function renderList(){
     box.innerHTML = `<div class="empty">
       <h3>👋 재건동이 사용법</h3>
       <ol>
-        <li>오른쪽 아래 <b>＋</b> 버튼으로 동네 추가</li>
+        <li>아래 <b>＋ 새 동네 추가</b>로 동네 추가</li>
         <li><b>시/도 → 시/군/구 → 읍/면/동</b>을 순서대로 선택 (법정동코드 몰라도 됨)</li>
         <li>인접역 이름 · 재건축 대상 단지명 입력 (빨간 테두리 = 필수)</li>
         <li>폼 맨 아래 <b>🔄 정보 불러오기</b> 클릭 → 실거래·전세·상권·인구·역승하차 자동 채움</li>
@@ -490,11 +490,12 @@ function renderList(){
       </ol>
       <p class="tip">💡 등록한 동네는 종합점수(100점)로 자동 순위가 매겨지고, [비교] 탭에서 항목별로 나란히 비교할 수 있습니다.
       자세한 산정 기준은 [가이드] 탭 참고.</p>
-    </div>`;
+    </div>
+    <button type="button" class="add-item" onclick="editDong(null)">＋ 새 동네 추가</button>`;
     return;
   }
   const sorted = [...state.dongs].sort((a,b)=>totalScore(b)-totalScore(a));
-  box.innerHTML = sorted.map(d=>{
+  const cards = sorted.map(d=>{
     const s = totalScore(d), g = grade(s);
     return `<div class="card dong-card" onclick="openDetail('${d.id}')">
       <div class="dong-head">
@@ -510,6 +511,27 @@ function renderList(){
       </div>
     </div>`;
   }).join("");
+  const addItem = `<button type="button" class="add-item" onclick="editDong(null)">＋ 새 동네 추가</button>`;
+  box.innerHTML = cards + addItem + renderScoreChartHtml(sorted);
+}
+
+// 등록된 동네가 2곳 이상일 때만 종합점수 비교 미니 차트를 보여준다
+// (1곳뿐이면 비교가 성립하지 않으므로 생략).
+function renderScoreChartHtml(sorted){
+  if(sorted.length < 2) return "";
+  const rows = sorted.map(d=>{
+    const s = totalScore(d);
+    const w = Math.max(2, s); // 0점이어도 트랙에서 살짝 보이게 최소 폭 확보
+    return `<div class="sbar">
+      <span class="lab">${esc(d.name)}</span>
+      <span class="track"><span class="fill" style="width:${w}%"></span></span>
+      <span class="val">${s}</span>
+    </div>`;
+  }).join("");
+  return `<div class="compare-mini">
+    <h3>📊 동네 비교 — 종합점수</h3>
+    ${rows}
+  </div>`;
 }
 
 function openDetail(id){
