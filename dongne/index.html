@@ -964,19 +964,42 @@ async function loadUmd(sidoName, sggName, sggCode, fallbackAddr){
   }
 }
 
+// 목록을 최대 limit개씩 동시에(병렬로) 처리한다 — 순서대로 하나씩 기다리는 것보다 훨씬 빠르다.
+async function mapConcurrent(list, limit, fn){
+  const results = new Array(list.length);
+  let next = 0;
+  async function worker(){
+    while(next < list.length){
+      const i = next++;
+      results[i] = await fn(list[i], i);
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(limit, list.length)}, worker));
+  return results;
+}
+
 async function rtmsItems(url, lawd, months){
-  const items = [];
+  const yms = [];
   let y = new Date().getFullYear(), m = new Date().getMonth()+1;
   for(let i=0;i<months;i++){
-    const ym = `${y}${String(m).padStart(2,"0")}`;
-    for(let page=1;;page++){
-      const qs = `LAWD_CD=${lawd}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=${page}`;
-      const res = await fetch(`${url}?${qs}&serviceKey=${dataGoKey()}`);
-      const {rows} = parseItems(await res.text());
-      items.push(...rows);
-      if(rows.length<1000) break;
-    }
+    yms.push(`${y}${String(m).padStart(2,"0")}`);
     m--; if(m===0){ m=12; y--; }
+  }
+  async function fetchPage(ym, page){
+    const qs = `LAWD_CD=${lawd}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=${page}`;
+    const res = await fetch(`${url}?${qs}&serviceKey=${dataGoKey()}`);
+    return parseItems(await res.text()).rows;
+  }
+  // 달마다 순서대로 기다리지 않고 최대 8개월치를 동시에 요청한다.
+  const firstPages = await mapConcurrent(yms, 8, ym=>fetchPage(ym,1));
+  const items = [];
+  let overflow = [];
+  firstPages.forEach((rows,i)=>{ items.push(...rows); if(rows.length>=1000) overflow.push(yms[i]); });
+  for(let page=2; overflow.length; page++){
+    const more = await mapConcurrent(overflow, 8, ym=>fetchPage(ym,page));
+    const stillFull = [];
+    more.forEach((rows,i)=>{ items.push(...rows); if(rows.length>=1000) stillFull.push(overflow[i]); });
+    overflow = stillFull;
   }
   return items;
 }
@@ -1023,19 +1046,30 @@ function rankNewCandidates(trades){
     .sort((a,b)=>(b[1].buildYear-a[1].buildYear) || (b[1].n-a[1].n));
 }
 async function fetchTradesAndRents(lawd, umd, months){
-  const trades = aggTrades(await rtmsItems(TRADE_URL, lawd, months));
+  // 매매·전세는 서로 무관한 조회라 동시에 요청한다 (순서대로 하면 두 배로 걸림).
+  const [tradeItems, rentItems] = await Promise.all([
+    rtmsItems(TRADE_URL, lawd, months),
+    rtmsItems(RENT_URL, lawd, months),
+  ]);
+  const trades = aggTrades(tradeItems);
   const tradesUmd = Object.fromEntries(Object.entries(trades).filter(([,v])=>v.umd===umd));
-  const rents = aggRents(await rtmsItems(RENT_URL, lawd, months));
+  const rents = aggRents(rentItems);
   return {trades, tradesUmd, rents};
 }
 async function fetchStoreCount(signgu, prefix){
-  const page1 = await (await fetch(`${STORE_URL}?divId=signguCd&key=${signgu}&type=json&numOfRows=1000&pageNo=1&serviceKey=${dataGoKey()}`)).json();
-  const body1 = page1.body || {};
+  async function fetchPage(page){
+    const json = await (await fetch(`${STORE_URL}?divId=signguCd&key=${signgu}&type=json&numOfRows=1000&pageNo=${page}&serviceKey=${dataGoKey()}`)).json();
+    return json.body || {};
+  }
+  const body1 = await fetchPage(1);
   const total = +(body1.totalCount || 0);
   let count = (body1.items||[]).filter(it=>(it.adongNm||"").startsWith(prefix)).length;
-  for(let page=2; page<=Math.ceil(total/1000); page++){
-    const res = await (await fetch(`${STORE_URL}?divId=signguCd&key=${signgu}&type=json&numOfRows=1000&pageNo=${page}&serviceKey=${dataGoKey()}`)).json();
-    count += ((res.body||{}).items||[]).filter(it=>(it.adongNm||"").startsWith(prefix)).length;
+  const pageCount = Math.ceil(total/1000);
+  if(pageCount > 1){
+    const rest = await mapConcurrent(
+      Array.from({length: pageCount-1}, (_,i)=>i+2), 8, fetchPage
+    );
+    rest.forEach(body=>{ count += (body.items||[]).filter(it=>(it.adongNm||"").startsWith(prefix)).length; });
   }
   return count;
 }
@@ -1079,32 +1113,40 @@ const SUBWAY_NON_COUNT_FIELDS = new Set(["crtrYmd","pasngYmd","pasngHr","stnCd",
 async function fetchStationRides(stationName){
   const name = stationName.replace(/역$/,"").trim();
   if(!name) return null;
-  let lastDebug = "";
-  for(let back=0; back<7; back++){
+
+  async function fetchDay(back){
     const d = new Date(); d.setDate(d.getDate()-back);
     const ymd = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
     const qs = `pasngYmd=${ymd}&stnNm=${encodeURIComponent(name)}&dataType=json&numOfRows=200&pageNo=1`;
     const res = await fetch(`${SUBWAY_URL}?${qs}&serviceKey=${dataGoKey()}`);
     const text = await res.text();
-    let json; try{ json = JSON.parse(text); }catch(e){ throw new Error("응답 파싱 실패: " + text.slice(0,200)); }
+    let json; try{ json = JSON.parse(text); }catch(e){ return {ymd, error: "응답 파싱 실패: "+text.slice(0,200)}; }
     const code = String(json?.header?.resultCode ?? "").trim();
-    // 00/0 = 정상, 03 = 그날 자료 없음(다음날로 넘어가면 됨), 그 외는 진짜 오류로 취급
+    // 00/0 = 정상, 03 = 그날 자료 없음, 그 외는 진짜 오류로 취급
     if(code && !["00","0","03"].includes(code)){
-      throw new Error(`[${code}] ${json?.header?.resultMsg || "알 수 없는 오류"}`);
+      return {ymd, error: `[${code}] ${json?.header?.resultMsg || "알 수 없는 오류"}`};
     }
     const rawItems = json?.body?.items?.item;
     const rows = Array.isArray(rawItems) ? rawItems : (rawItems ? [rawItems] : []);
-    if(rows.length){
+    return {ymd, rows, raw: text};
+  }
+
+  // 하루씩 순서대로 기다리지 않고 최근 7일치를 한 번에 동시 요청한다.
+  const results = await Promise.all(Array.from({length:7}, (_,back)=>fetchDay(back)));
+  for(const r of results){ // back=0(오늘)부터 순서대로 — 가장 최근에 자료가 있는 날을 우선한다
+    if(r.rows && r.rows.length){
       let daily = 0;
-      rows.forEach(r=>Object.entries(r).forEach(([k,v])=>{
+      r.rows.forEach(row=>Object.entries(row).forEach(([k,v])=>{
         if(!SUBWAY_NON_COUNT_FIELDS.has(k) && v!=null && v!=="" && !isNaN(+v)) daily += +v;
       }));
       return { annualEstimate: Math.round(daily*365) };
     }
-    lastDebug = `ymd=${ymd} RAW=${text.slice(0,300)}`;
   }
-  // 임시 디버그: 7일 전부 빈 응답이면 원인 파악을 위해 마지막 시도의 원본 응답을 노출한다
-  throw new Error(`7일간 데이터 없음 (검색어='${name}') 마지막 시도: ${lastDebug}`);
+  const withError = results.find(r=>r.error);
+  if(withError) throw new Error(withError.error);
+  // 임시 디버그: 7일 전부 빈 응답이면 원인 파악을 위해 원본 응답을 노출한다
+  const last = results[0];
+  throw new Error(`7일간 데이터 없음 (검색어='${name}') 마지막 시도: ymd=${last.ymd} RAW=${(last.raw||"").slice(0,300)}`);
 }
 
 function setField(f, name, value){
@@ -1127,14 +1169,26 @@ async function fetchInfo(){
   const btn = document.getElementById("btn-fetch-info");
   btn.disabled = true;
   try{
-    // 매매는 자주 안 일어나서 6개월 창으로는 자료가 없는 경우가 흔했다 —
-    // 처음부터 2년치를 한 번에 받고, 그 안에서 가장 최근 거래가를 쓴다
-    // (6개월→2년 재조회로 두 번 받던 것보다 오히려 빠르다).
-    status.textContent = "▶ 매매 실거래 조회 중… (최근 2년)";
-    const {trades, tradesUmd, rents} = await fetchTradesAndRents(lawd, umd, 24);
-
     const notes = [];
     const rkw = f.rebuildAptName.value.trim();
+    const prefix = f.adongPrefix.value.trim() || umd.replace(/\d+동$/,"").replace(/동$/,"");
+    const stationName = f.stationName.value.trim();
+
+    // 서로 무관한 조회들을 전부 동시에 시작한다 (예전엔 하나씩 순서대로 기다렸음).
+    // 매매는 자주 안 일어나서 6개월 창으로는 자료가 없는 경우가 흔해, 처음부터
+    // 2년치를 받고 그 안에서 가장 최근 거래가 중 최고가를 쓴다.
+    status.textContent = "▶ 실거래·전세·상권·인구·역승하차 동시 조회 중… (최근 2년)";
+    const tradesPromise = fetchTradesAndRents(lawd, umd, 24);
+    const storePromise = prefix
+      ? fetchStoreCount(lawd, prefix).catch(e=>({__error: e.message}))
+      : Promise.resolve(null);
+    const popPromise = fetchPopulation(lawd, prefix || umd).catch(e=>({__error: e.message}));
+    const staticRides = stationName ? lookupStationRides(stationName) : null;
+    const ridePromise = !stationName ? null
+      : staticRides != null ? Promise.resolve({annualEstimate: staticRides})
+      : fetchStationRides(stationName).catch(e=>({__error: e.message}));
+
+    const {trades, tradesUmd, rents} = await tradesPromise;
 
     const newRanked = rankNewCandidates(trades);
     const dongEntries = Object.entries(tradesUmd);
@@ -1177,33 +1231,21 @@ async function fetchInfo(){
     }
     renderAptToggle("toggle-rebuildApt", rebuildRanked, f.rebuildAptName.value, pickRebuild);
 
-    const prefix = f.adongPrefix.value.trim() || umd.replace(/\d+동$/,"").replace(/동$/,"");
+    status.textContent = "▶ 상권·인구·역승하차 결과 정리 중…";
+    const [storeResult, popResult, rideResult] = await Promise.all([storePromise, popPromise, ridePromise]);
+
     if(prefix){
-      status.textContent = "▶ 상권 점포 수 집계 중…";
-      setField(f, "stores", await fetchStoreCount(lawd, prefix));
+      if(storeResult && storeResult.__error) notes.push(`상권 조회 실패: ${storeResult.__error}`);
+      else if(storeResult != null) setField(f, "stores", storeResult);
     }
 
-    status.textContent = "▶ 인구 조회 중…";
-    try{
-      const pop = await fetchPopulation(lawd, prefix || umd);
-      if(pop){ setField(f, "popTotal", pop.total); setField(f, "pop2040", pop.age2040); }
-      else notes.push("인구 데이터를 찾지 못함");
-    }catch(e){ notes.push(`인구 조회 실패: ${e.message}`); }
+    if(popResult && popResult.__error) notes.push(`인구 조회 실패: ${popResult.__error}`);
+    else if(popResult){ setField(f, "popTotal", popResult.total); setField(f, "pop2040", popResult.age2040); }
 
-    const stationName = f.stationName.value.trim();
     if(stationName){
-      const staticRides = lookupStationRides(stationName);
-      if(staticRides != null){
-        // 서울교통공사+코레일 수도권 정적 집계(실제 연간치)가 있으면 그대로 사용 — 실시간 API보다 정확함
-        setField(f, "stationRides", staticRides);
-      }else{
-        status.textContent = "▶ 역 승하차 조회 중… (서울교통공사 노선만 지원, 최근 1주일 기반 추정치)";
-        try{
-          const ride = await fetchStationRides(stationName);
-          if(ride) setField(f, "stationRides", ride.annualEstimate);
-          else notes.push("역 승하차 데이터 없음(수도권 정적 집계·서울교통공사 실시간 API 둘 다 커버 못 하는 역)");
-        }catch(e){ notes.push(`역 승하차 조회 실패: ${e.message}`); }
-      }
+      if(rideResult && rideResult.__error) notes.push(`역 승하차 조회 실패: ${rideResult.__error}`);
+      else if(rideResult) setField(f, "stationRides", rideResult.annualEstimate);
+      else notes.push("역 승하차 데이터 없음(수도권 정적 집계·서울교통공사 실시간 API 둘 다 커버 못 하는 역)");
     }
 
     updateCalcs();
