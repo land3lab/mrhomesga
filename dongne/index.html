@@ -197,8 +197,8 @@ td.best{color:var(--accent-deep);font-weight:800}
         <input type="hidden" name="sido">
         <input type="hidden" name="lawd">
 
-        <label class="f"><b>상가 집계용 행정동 접두어 *</b> <span class="hint">(정보 불러오기의 점포 수·인구 집계 기준)</span>
-          <input type="text" name="adongPrefix" required placeholder="예: 본오 (본오1·2·3동 합산)"></label>
+        <label class="f">상가 집계용 행정동 접두어 <span class="hint">(정보 불러오기의 점포 수·인구 집계 기준. 비우면 읍/면/동 이름으로 추정)</span>
+          <input type="text" name="adongPrefix" placeholder="예: 본오 (본오1·2·3동 합산)"></label>
       </fieldset>
 
       <fieldset>
@@ -220,18 +220,21 @@ td.best{color:var(--accent-deep);font-weight:800}
       </fieldset>
 
       <fieldset>
-        <legend>가격 (만원) <span class="hint">출처: 네이버 부동산 / 국토부 실거래가 · 신축/해당동은 [정보 불러오기]가 자동 선정, 재건축 대상만 직접 입력</span></legend>
-        <label class="f"><b>신축 대표 단지명</b> <span class="hint">(자동 선정 — 최근 준공된 단지 중 거래가 많은 곳)</span><input type="text" name="newAptName" placeholder="정보 불러오기로 자동 채움"></label>
+        <legend>가격 (만원) <span class="hint">출처: 네이버 부동산 / 국토부 실거래가 · [정보 불러오기] 후 아래 후보 목록에서 다른 단지를 골라도 됨</span></legend>
+        <label class="f"><b>신축 대표 단지명</b> <span class="hint">(기본은 자동 선정 — 최근 준공 순. 후보 목록에서 직접 골라도 됨)</span><input type="text" name="newAptName" placeholder="정보 불러오기로 자동 채움"></label>
+        <div class="toggle-group" id="toggle-newApt"><span class="hint">정보 불러오기 후 여기서 다른 단지를 고를 수 있음</span></div>
         <div class="grid2">
           <label class="f"><b>신축 최고가(84㎡)</b><input type="number" name="newAptPrice" inputmode="numeric" placeholder="예: 68000"></label>
           <label class="f">신축 평당가<input type="number" name="newAptPy" inputmode="numeric" placeholder="예: 2110"></label>
         </div>
-        <label class="f"><b>해당 동 최고가 단지명</b> <span class="hint">(자동 선정 — 이 읍/면/동 안에서 최고가 단지)</span><input type="text" name="dongAptName" placeholder="정보 불러오기로 자동 채움"></label>
+        <label class="f"><b>해당 동 최고가 단지명</b> <span class="hint">(기본은 자동 선정 — 이 읍/면/동 최고가 순. 후보 목록에서 직접 골라도 됨)</span><input type="text" name="dongAptName" placeholder="정보 불러오기로 자동 채움"></label>
+        <div class="toggle-group" id="toggle-dongApt"><span class="hint">정보 불러오기 후 여기서 다른 단지를 고를 수 있음</span></div>
         <div class="grid2">
           <label class="f"><b>해당 동 최고가</b><input type="number" name="dongAptPrice" inputmode="numeric" placeholder="예: 53000"></label>
           <label class="f">해당 동 평당가<input type="number" name="dongAptPy" inputmode="numeric" placeholder="예: 1690"></label>
         </div>
-        <label class="f"><b>재건축 대상 단지명 *</b> <span class="hint">(직접 입력 — 어떤 단지를 재건축 대상으로 볼지는 자동 판단 불가. 검색은 최대 2년까지 확대하고, 그래도 없으면 호갱노노 등에서 확인해 아래 값을 직접 입력)</span><input type="text" name="rebuildAptName" required placeholder="예: 월드"></label>
+        <label class="f"><b>재건축 대상 단지명 *</b> <span class="hint">(직접 입력 또는 아래 후보 목록에서 선택 — 준공이 오래된 순으로 나열. 2년 내 거래가 없으면 호갱노노 등에서 확인 후 직접 입력)</span><input type="text" name="rebuildAptName" required placeholder="예: 월드"></label>
+        <div class="toggle-group" id="toggle-rebuildApt"><span class="hint">정보 불러오기 후 여기서 단지를 고를 수 있음</span></div>
         <div class="grid2">
           <label class="f"><b>재건축 최고가</b><input type="number" name="rebuildAptPrice" inputmode="numeric" placeholder="예: 33000"></label>
           <label class="f">재건축 평당가<input type="number" name="rebuildAptPy" inputmode="numeric" placeholder="예: 2160"></label>
@@ -628,7 +631,7 @@ function updateCalcs(){
 document.getElementById("dong-form").addEventListener("input", updateCalcs);
 
 // [정보 불러오기] 실행 전 반드시 채워야 하는 필드 — 비어 있으면 빨간 테두리로 표시하고 실행을 막는다.
-const FETCH_REQUIRED = ["adongPrefix","stationName","rebuildAptName"];
+const FETCH_REQUIRED = ["stationName","rebuildAptName"];
 function validateFetchRequired(f){
   let ok = true;
   FETCH_REQUIRED.forEach(k=>{
@@ -708,6 +711,24 @@ function renderToggles(containerId, items, currentLabel, onPick){
   });
 }
 
+// 아파트 단지 후보 토글 — 자동 선정된 값 대신 목록에서 직접 골라도 되게 한다.
+// entries는 이미 원하는 순서로 정렬된 [단지명, {max,py,n,buildYear}] 배열.
+function renderAptToggle(containerId, entries, selectedApt, onPick){
+  const box = document.getElementById(containerId);
+  if(!entries.length){ box.innerHTML = `<span class="hint">후보 단지 없음</span>`; return; }
+  const top = entries.slice(0, 20);
+  box.innerHTML = top.map(([apt,v])=>
+    `<button type="button" class="toggle-btn${apt===selectedApt?" on":""}">${esc(apt)} (${won(v.max)})</button>`
+  ).join("");
+  [...box.children].forEach((btn,i)=>{
+    btn.onclick = ()=>{
+      [...box.children].forEach(b=>b.classList.remove("on"));
+      btn.classList.add("on");
+      onPick(top[i][0], top[i][1]);
+    };
+  });
+}
+
 function refreshRegionHint(){
   const f = document.getElementById("dong-form");
   const txt = [f.sido.value, f.city.value, f.name.value].filter(Boolean).join(" ");
@@ -723,6 +744,9 @@ function clearRegionDependentFields(){
    "newAptName","newAptPrice","newAptPy","dongAptName","dongAptPrice","dongAptPy",
    "rebuildAptName","rebuildAptPrice","rebuildAptPy","jeonseNew","jeonseDong"]
     .forEach(k=>{ if(f[k]) f[k].value = ""; });
+  ["toggle-newApt","toggle-dongApt","toggle-rebuildApt"].forEach(id=>{
+    document.getElementById(id).innerHTML = `<span class="hint">정보 불러오기 후 여기서 단지를 고를 수 있음</span>`;
+  });
   document.getElementById("fetch-status").textContent = "";
   updateCalcs();
 }
@@ -977,7 +1001,7 @@ async function fetchInfo(){
   if(!lawd || !umd){ alert("먼저 시/도 → 시/군/구 → 읍/면/동을 선택하세요."); return; }
   if(!window.DATA_GO_KR_KEY){ alert("공공데이터 인증키가 없습니다 (config.js 확인 — 이 화면을 로컬 파일로 열었다면 배포된 사이트에서 시도하세요)."); return; }
   if(!validateFetchRequired(f)){
-    status.textContent = "⚠ 빨간 테두리 항목(상가 집계용 행정동 접두어 · 인접역 이름 · 재건축 대상 단지명)을 먼저 입력하세요.";
+    status.textContent = "⚠ 빨간 테두리 항목(인접역 이름 · 재건축 대상 단지명)을 먼저 입력하세요.";
     return;
   }
   const btn = document.getElementById("btn-fetch-info");
@@ -1006,30 +1030,41 @@ async function fetchInfo(){
     }
 
     // 신축 대표: 검색어 없이 자동 선정 — 시군구 전체에서 건축년도가 가장 최근이면서
-    // 거래가 있는(노이즈 방지로 2건 이상 우선) 단지.
-    if(!newRanked.length){ notes.push("신축 대표 단지를 찾지 못함 (최근 2년 내 거래 없음)"); }
-    else{
-      const [apt, v] = newRanked[0];
+    // 거래가 있는(노이즈 방지로 2건 이상 우선) 단지. 후보 목록에서 다른 단지로 바꿔도 된다.
+    const pickNew = (apt, v) => {
       setField(f, "newAptName", apt); setField(f, "newAptPrice", v.max); setField(f, "newAptPy", v.py);
-      const jeonse = rents[apt]; if(jeonse) setField(f, "jeonseNew", jeonse);
-    }
+      const jeonse = rents[apt]; if(jeonse) setField(f, "jeonseNew", jeonse); else f.jeonseNew.value = "";
+      updateCalcs();
+    };
+    if(!newRanked.length){ notes.push("신축 대표 단지를 찾지 못함 (최근 2년 내 거래 없음)"); }
+    else pickNew(...newRanked[0]);
+    renderAptToggle("toggle-newApt", newRanked, f.newAptName.value, pickNew);
 
-    // 해당 동 최고가: 선택한 읍/면/동 안에서 최고가 단지 자동 선정
-    if(!dongEntries.length){ notes.push("해당 동 최근 거래를 찾지 못함 (최근 2년 내 거래 없음)"); }
-    else{
-      const [apt, v] = dongEntries.reduce((best,cur)=>cur[1].max>best[1].max?cur:best);
+    // 해당 동 최고가: 선택한 읍/면/동 안에서 최고가 단지 자동 선정 (가격 높은 순 후보 목록 제공)
+    const dongByPrice = [...dongEntries].sort((a,b)=>b[1].max-a[1].max);
+    const pickDong = (apt, v) => {
       setField(f, "dongAptName", apt); setField(f, "dongAptPrice", v.max); setField(f, "dongAptPy", v.py);
-      const jeonse = rents[apt]; if(jeonse) setField(f, "jeonseDong", jeonse);
-    }
+      const jeonse = rents[apt]; if(jeonse) setField(f, "jeonseDong", jeonse); else f.jeonseDong.value = "";
+      updateCalcs();
+    };
+    if(!dongByPrice.length){ notes.push("해당 동 최근 거래를 찾지 못함 (최근 2년 내 거래 없음)"); }
+    else pickDong(...dongByPrice[0]);
+    renderAptToggle("toggle-dongApt", dongByPrice, f.dongAptName.value, pickDong);
 
     // 재건축 대상: 자동 판단이 불가능한 항목이라 사용자가 입력한 이름으로 검색만 한다.
+    // 후보 목록은 준공이 오래된 순으로 보여줘서(재건축 대상다운 순서) 직접 고르기 쉽게 한다.
+    const rebuildRanked = [...dongEntries].sort((a,b)=>(a[1].buildYear||9999)-(b[1].buildYear||9999));
+    const pickRebuild = (apt, v) => {
+      setField(f, "rebuildAptName", apt); setField(f, "rebuildAptPrice", v.max); setField(f, "rebuildAptPy", v.py);
+      updateCalcs();
+    };
     if(!rkw){ notes.push("재건축 대상 단지명이 비어 있어 건너뜀"); }
     else if(!rebuildHit){
-      notes.push(`'${rkw}'(재건축) 최근 2년 내 거래를 찾지 못함 — 호갱노노 등에서 시세를 확인해 직접 입력하세요`);
+      notes.push(`'${rkw}'(재건축) 최근 2년 내 거래를 찾지 못함 — 호갱노노 등에서 시세를 확인해 직접 입력하거나 아래 후보에서 고르세요`);
     }else{
-      const [apt, v] = rebuildHit;
-      setField(f, "rebuildAptName", apt); setField(f, "rebuildAptPrice", v.max); setField(f, "rebuildAptPy", v.py);
+      pickRebuild(...rebuildHit);
     }
+    renderAptToggle("toggle-rebuildApt", rebuildRanked, f.rebuildAptName.value, pickRebuild);
 
     const prefix = f.adongPrefix.value.trim() || umd.replace(/\d+동$/,"").replace(/동$/,"");
     if(prefix){
