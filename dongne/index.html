@@ -324,13 +324,15 @@ td.best{color:var(--accent-deep);font-weight:800}
     <div class="card">
       <h3 style="margin-top:0">📐 종합점수 산정 기준 (100점)</h3>
       <ul>
-        <li><b>20~40대 비율</b> 15점 — 25%에서 0점, 50%에서 만점</li>
-        <li><b>가격 갭</b> 15점 — 신축 평당가 대비 재건축 평당가가 쌀수록 높음 (안전마진)</li>
-        <li><b>역 이용객</b> 10점 · <b>상권 점포</b> 10점 · <b>신축 평당가</b> 10점</li>
-        <li><b>전세가율</b> 10점 — 50%에서 0점, 80%에서 만점 (실수요·갭투자 용이)</li>
-        <li><b>공급 부담</b> 10점 — 입주 예정 0세대 만점, 5,000세대 이상 0점</li>
-        <li><b>용적률 여유</b> 10점 — 평균 150% 이하 만점, 250% 이상 0점</li>
-        <li><b>인구 규모</b> 5점 · <b>추진 단계</b> 5점</li>
+        <li><b>20~40대 비율</b> 15점 — 25% 미만 0점, 25~50%는 가파르게, 50~100%는 완만하게 상승 (50%=7.5점, 100%=15점)</li>
+        <li><b>가격 갭(안전마진)</b> 25점 — 신축 평당가 대비 재건축 평당가가 쌀수록 높음, 차이 50% 이상에서 만점</li>
+        <li><b>역 이용객</b> 10점 — 연간 역 승하차인원 ÷ 총인구 비율 기준, 0배 0점 ~ 10배 만점 (출퇴근 이용 수요)</li>
+        <li><b>상권 점포</b> 10점 — 점포수 5,000개 이상에서 만점</li>
+        <li><b>전세가율</b> 15점 — 50% 이하 0점, 80%에서 만점 (실수요·갭투자 용이)</li>
+        <li><b>공급 부담</b> 5점 — 입주 예정 0세대 만점, 5,000세대 이상 0점</li>
+        <li><b>용적률 여유</b> 5점 — 평균 150% 이하 만점, 250% 이상 0점</li>
+        <li><b>추진 단계</b> 10점 — 단계가 높을수록 비례하여 만점에 가까워짐</li>
+        <li><b>인구 규모</b> 5점 — 총인구 1만명 0점 ~ 10만명 만점</li>
       </ul>
       <p>미입력 항목은 0점 처리되며 막대가 회색으로 표시됩니다.</p>
     </div>
@@ -451,6 +453,13 @@ function renderRecentBanner(){
 /* ───── scoring ───── */
 const lin = (v,a,b) => v==null||isNaN(v) ? null : Math.max(0, Math.min(1, (v-a)/(b-a)));
 const inv = x => x==null ? null : 1-x;
+// 20~40대 비율: 25% 미만 0점, 25~50%는 가파르게, 50~100%는 완만하게(10%당 1점 비율로) 오르는 2단 곡선.
+function twoStage2040(ratio){
+  if(ratio==null || isNaN(ratio)) return null;
+  if(ratio < 0.25) return 0;
+  if(ratio <= 0.50) return (ratio-0.25)/0.25 * 0.5;
+  return Math.min(1, 0.5 + (ratio-0.50)/0.50 * 0.5);
+}
 
 function components(d){
   const r2040 = (d.pop2040>0 && d.popTotal>0) ? d.pop2040/d.popTotal : null;
@@ -458,17 +467,17 @@ function components(d){
   const jDong = (d.jeonseDong>0 && d.dongAptPrice>0)? d.jeonseDong/d.dongAptPrice : null;
   const jAvg  = jNew!=null && jDong!=null ? (jNew+jDong)/2 : (jNew ?? jDong);
   const gap   = (d.newAptPy>0 && d.rebuildAptPy>0) ? (d.newAptPy-d.rebuildAptPy)/d.newAptPy : null;
+  const rideRatio = (d.stationRides>0 && d.popTotal>0) ? d.stationRides/d.popTotal : null;
   return [
-    {k:"20~40대 비율", max:15, r: lin(r2040,0.25,0.50)},
-    {k:"가격 갭",       max:15, r: gap==null?null:lin(gap,0,0.5)},
-    {k:"역 이용객",     max:10, r: d.stationRides>0 ? lin(Math.log10(d.stationRides),5,7.5) : null},
-    {k:"상권 점포",     max:10, r: lin(d.stores,0,5000)},
-    {k:"신축 평당가",   max:10, r: lin(d.newAptPy,1000,5000)},
-    {k:"전세가율",     max:10, r: jAvg==null?null:lin(jAvg,0.5,0.8)},
-    {k:"공급 부담 없음",max:10, r: d.supplyUnits==null||d.supplyUnits===""?null:inv(lin(d.supplyUnits,0,5000))},
-    {k:"용적률 여유",   max:10, r: d.farAvg>0?inv(lin(d.farAvg,150,250)):null},
-    {k:"인구 규모",     max:5,  r: lin(d.popTotal,10000,100000)},
-    {k:"추진 단계",     max:5,  r: d.stage>=0?d.stage/(STAGES.length-1):null},
+    {k:"20~40대 비율",  max:15, r: twoStage2040(r2040)},
+    {k:"가격 갭(안전마진)", max:25, r: gap==null?null:lin(gap,0,0.5)},
+    {k:"역 이용객",      max:10, r: lin(rideRatio,0,10)},
+    {k:"상권 점포",      max:10, r: lin(d.stores,0,5000)},
+    {k:"전세가율",      max:15, r: jAvg==null?null:lin(jAvg,0.5,0.8)},
+    {k:"공급 부담 없음", max:5,  r: d.supplyUnits==null||d.supplyUnits===""?null:inv(lin(d.supplyUnits,0,5000))},
+    {k:"용적률 여유",    max:5,  r: d.farAvg>0?inv(lin(d.farAvg,150,250)):null},
+    {k:"추진 단계",      max:10, r: d.stage>=0?d.stage/(STAGES.length-1):null},
+    {k:"인구 규모",      max:5,  r: lin(d.popTotal,10000,100000)},
   ].map(c => ({...c, pts: c.r==null?0:Math.round(c.r*c.max*10)/10 }));
 }
 const totalScore = d => Math.round(components(d).reduce((s,c)=>s+c.pts,0));
