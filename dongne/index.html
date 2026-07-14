@@ -967,12 +967,10 @@ function aggTrades(items){
     if(!price || !area) return;
     const py = Math.round(price/(area/3.3058));
     const buildYear = parseInt(it.buildYear,10) || 0;
-    // "최고가"가 아니라 "가장 최근 거래가"를 쓴다 — 2년치를 통째로 보면
-    // 옛날 고점이 오늘 시세처럼 보일 수 있어서, 최신 거래를 우선한다.
-    const dealKey = (+it.dealYear||0)*10000 + (+it.dealMonth||0)*100 + (+it.dealDay||0);
-    const cur = byApt[apt] || (byApt[apt] = {max:0, py:0, n:0, umd:it.umdNm||"", buildYear:0, dealKey:-1});
+    // 최근(최근 2년 조회 범위) 거래 중 최고가를 쓴다.
+    const cur = byApt[apt] || (byApt[apt] = {max:0, py:0, n:0, umd:it.umdNm||"", buildYear:0});
     cur.n++;
-    if(dealKey >= cur.dealKey){ cur.dealKey = dealKey; cur.max = price; cur.py = py; }
+    if(price > cur.max){ cur.max = price; cur.py = py; }
     if(buildYear>cur.buildYear) cur.buildYear = buildYear;
   });
   return byApt;
