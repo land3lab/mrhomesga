@@ -1,7 +1,7 @@
 # 🏘️ 재건축 동네분석
 
 엑셀로 수작업하던 행정동 단위 재건축 분석을 **폰/PC 브라우저에서 바로 쓰는 앱**으로 옮긴 것.
-서버·DB·로그인 없이 HTML 파일 하나로 동작한다.
+서버·DB·로그인 없이 HTML 파일 하나로 동작한다 (사용 로그 수집을 켜면 Firebase만 예외).
 
 ## 구성
 
@@ -18,6 +18,8 @@
 | `manifest.webmanifest` | 폰 홈 화면에 "앱처럼" 추가할 때 쓰는 설정 |
 | `config.template.js` / `config.js` | 배포 빌드가 API 키를 채워 넣는 자리표시자 (git에는 빈 값만) |
 | `sw.js` | 서비스 워커 — 오프라인 캐싱, PWA 설치 활성화 |
+| `firebase-config.js` | Firebase 프로젝트 설정값 (사용 로그 기능용, 비워두면 로그 기능 비활성) |
+| `admin-logs.html` | 관리자(본인)만 GitHub 로그인해서 사용 로그를 보는 페이지 |
 
 ## 기능
 
@@ -223,3 +225,49 @@ fetch_data.py가 후보 목록과 함께 에러를 내므로, 그때만 `sigungu
 일부 역(특히 최근 행정구역이 개편된 인천 등)은 도로명주소의 옛 구 이름과 안 맞아 정확한
 시/군/구로 못 묶이는 경우가 있는데, 이런 역은 시/도 단위의 "_기타" 목록에 들어가 완전히
 누락되지는 않는다.
+
+## 사용 로그 (관리자 전용, 선택 기능)
+
+앱을 쓰는 사람들이 무엇을 입력하고 어떤 결과를 받았는지(`저장`, `정보 불러오기` 실행 시점)를
+Firebase Firestore에 남기고, **본인만 GitHub 로그인으로** `admin-logs.html`에서 볼 수 있다.
+`firebase-config.js`를 안 채우면 이 기능은 그냥 꺼진 채로 앱은 평소처럼 동작한다.
+
+### 설정 (한 번만)
+
+1. [Firebase 콘솔](https://console.firebase.google.com) → 프로젝트 추가 (무료)
+2. **Firestore Database** 활성화 (프로덕션 모드, 리전은 asia-northeast3 추천)
+3. **Authentication** → 로그인 방법 → **GitHub** 추가·활성화 (여기 뜨는 "승인 콜백 URL" 복사)
+4. GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
+   - Homepage URL: 배포 URL (예: `https://land3lab.github.io/mrhomesga/`)
+   - Authorization callback URL: 3번에서 복사한 URL
+   - 생성된 Client ID/Secret을 다시 Firebase GitHub 설정 화면에 입력
+5. Firebase 콘솔 → 프로젝트 설정 → 일반 → 내 앱 → 웹 앱 등록 → `firebaseConfig` 복사해서
+   `dongne/firebase-config.js`의 `window.FIREBASE_CONFIG`에 붙여넣기
+6. Firestore → 규칙 탭에 아래 규칙 붙여넣고 게시 (최초엔 로그인한 사람 누구나 조회 가능한
+   임시 버전 — 관리자 본인 것만 남기려면 7번 진행):
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /logs/{logId} {
+      allow create: if true;                       // 앱 사용자는 누구나 로그를 남길 수 있음
+      allow read, list: if request.auth != null;    // 로그인한 사람은 일단 조회 가능(임시)
+      allow update, delete: if false;               // 로그는 수정·삭제 불가
+    }
+  }
+}
+```
+
+7. 배포된 앱에서 `admin-logs.html`을 열어 GitHub으로 한 번 로그인 → 화면에 뜨는 **UID**를 확인
+8. Firestore 규칙의 `allow read, list` 조건을 본인 UID로 고정:
+   `allow read, list: if request.auth != null && request.auth.uid == "복사한 UID";`
+   → 다시 게시하면 이제 그 GitHub 계정으로 로그인한 사람만 로그를 볼 수 있다
+
+### 무엇이 기록되는가
+
+- `save_dong`: 동네 저장 시 전체 입력값
+- `fetch_info` / `fetch_info_error`: 정보 불러오기 실행 시 입력(지역·검색어)과 결과(자동으로
+  채워진 값), 실패 시 오류 메시지
+- 개인 식별 정보(이름·연락처 등)는 앱 자체에 입력란이 없어 수집되지 않는다. 다만 여러 사람이
+  쓰는 배포본이라면, 사용 로그를 수집한다는 사실을 사용자에게 알리는 것이 바람직하다.

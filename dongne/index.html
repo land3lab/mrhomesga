@@ -378,10 +378,35 @@ td.best{color:var(--accent-deep);font-weight:800}
 </nav>
 
 <script src="config.js"></script>
+<script src="firebase-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
 "use strict";
 const LS_KEY = "dongne-data-v1";
 const STAGES = ["초기/해당없음","안전진단","추진위원회 승인","조합설립인가","사업시행인가","관리처분인가","이주·철거·착공"];
+
+// ───── 사용 로그(관리자 전용) ─────
+// firebase-config.js에 실제 프로젝트 설정을 넣으면 활성화된다. 설정이 없으면
+// (REPLACE_ME 그대로거나 firebase SDK 로드 실패) 조용히 아무것도 하지 않는다 —
+// 로그 기능이 없어도 앱 자체 동작에는 영향이 없다.
+let LOG_DB = null;
+try{
+  const cfg = window.FIREBASE_CONFIG;
+  if(cfg && cfg.apiKey && cfg.apiKey !== "REPLACE_ME" && window.firebase){
+    firebase.initializeApp(cfg);
+    LOG_DB = firebase.firestore();
+  }
+}catch(e){ /* 로그 비활성 상태로 계속 진행 */ }
+
+function logEvent(type, payload){
+  if(!LOG_DB) return;
+  LOG_DB.collection("logs").add({
+    type, payload,
+    ts: firebase.firestore.FieldValue.serverTimestamp(),
+    ua: navigator.userAgent,
+  }).catch(()=>{ /* 로그 실패는 사용자 경험에 영향 주지 않도록 무시 */ });
+}
 
 const SEED = [{
   id:"seed-bono", name:"본오동", city:"안산시 상록구",
@@ -672,6 +697,7 @@ function saveDong(ev){
     rec[k] = NUMS.has(k) ? (v===""?null:+v) : v;
   });
   rec.updatedAt = new Date().toISOString().slice(0,10);
+  logEvent("save_dong", rec);
   if(state.editing){
     const i = state.dongs.findIndex(x=>x.id===state.editing);
     state.dongs[i] = {...state.dongs[i], ...rec};
@@ -1252,8 +1278,21 @@ async function fetchInfo(){
     status.textContent = notes.length
       ? `✅ 완료 (일부 건너뜀) — ${notes.join(" · ")}`
       : "✅ 완료 — 파란색으로 반짝인 항목이 방금 채워진 값입니다.";
+
+    logEvent("fetch_info", {
+      input: {sido: f.sido.value, city: f.city.value, name: f.name.value, lawd,
+        adongPrefix: f.adongPrefix.value, stationName, rebuildKeyword: rkw},
+      result: {
+        newAptName: f.newAptName.value, newAptPrice: f.newAptPrice.value, newAptPy: f.newAptPy.value,
+        dongAptName: f.dongAptName.value, dongAptPrice: f.dongAptPrice.value, dongAptPy: f.dongAptPy.value,
+        rebuildAptName: f.rebuildAptName.value, rebuildAptPrice: f.rebuildAptPrice.value, rebuildAptPy: f.rebuildAptPy.value,
+        popTotal: f.popTotal.value, pop2040: f.pop2040.value, stores: f.stores.value, stationRides: f.stationRides.value,
+      },
+      notes,
+    });
   }catch(e){
     status.textContent = `⚠ 조회 실패: ${e.message}`;
+    logEvent("fetch_info_error", {stationName: f.stationName.value, error: e.message});
   }finally{
     btn.disabled = false;
   }
