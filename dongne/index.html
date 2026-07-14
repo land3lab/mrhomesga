@@ -9,9 +9,6 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="재건둥이">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -43,8 +40,11 @@ body{
 }
 .wrap{max-width:760px;margin:0 auto;padding:0 16px}
 header.app{padding:20px 0 4px}
-header.app h1{font-size:1.25rem;font-weight:800;letter-spacing:-.02em}
-header.app p{font-size:.8rem;color:var(--muted)}
+header.app .brand{display:flex;align-items:center;gap:10px}
+header.app .brand img{height:34px;width:auto;border-radius:6px}
+header.app .brand img.land3lab{height:40px;background:#fff;padding:2px;border:1px solid var(--border)}
+header.app h1{font-size:1.15rem;font-weight:800;letter-spacing:-.02em}
+header.app p{font-size:.8rem;color:var(--muted);margin-top:4px}
 
 /* ─ tabs (bottom on mobile) ─ */
 nav.tabs{
@@ -167,7 +167,11 @@ td.best{color:var(--accent-deep);font-weight:800}
 <body>
 <div class="wrap">
   <header class="app">
-    <h1>🏘️ RSAR Land3 재건둥이</h1>
+    <div class="brand">
+      <img src="logo/rsar.png" alt="RSAR" height="34">
+      <img src="logo/land3lab.jpg" alt="Land3 Lab" class="land3lab" height="40">
+      <h1>재건둥이</h1>
+    </div>
     <p>재건축 동네분석 시스템 · 행정동 단위 재건축 투자 분석 · 데이터는 이 기기에 저장됩니다</p>
   </header>
 
