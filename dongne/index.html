@@ -220,6 +220,19 @@ td.best{color:var(--accent-deep);font-weight:800}
       </fieldset>
 
       <fieldset>
+        <legend>필수 입력 <span class="hint">정보 불러오기 실행 조건 — 빈 칸이면 빨간 테두리로 표시됨</span></legend>
+        <label class="f"><b>인접역 이름 *</b><input type="text" name="stationName" required placeholder="예: 상록수역"></label>
+        <div class="toggle-group" id="toggle-station"><span class="hint">읍/면/동을 선택하면 근처 역이 뜹니다</span></div>
+        <label class="f"><b>재건축 대상 단지명 *</b> <span class="hint">(직접 입력 또는 정보 불러오기 후 아래 후보 목록에서 선택 — 준공이 오래된 순으로 나열)</span><input type="text" name="rebuildAptName" required placeholder="예: 월드"></label>
+        <div class="toggle-group" id="toggle-rebuildApt"><span class="hint">정보 불러오기 후 여기서 단지를 고를 수 있음</span></div>
+      </fieldset>
+
+      <div class="btn-row">
+        <button type="button" class="btn primary" id="btn-fetch-info" onclick="fetchInfo()" style="flex:1">🔄 정보 불러오기 (실거래·전세·상권·인구·역승하차)</button>
+      </div>
+      <p class="hint" id="fetch-status"></p>
+
+      <fieldset>
         <legend>인구 <span class="hint">출처: 행정안전부 주민등록 인구통계</span></legend>
         <div class="grid2">
           <label class="f"><b>총인구</b><input type="number" name="popTotal" inputmode="numeric" placeholder="예: 75256"></label>
@@ -230,11 +243,7 @@ td.best{color:var(--accent-deep);font-weight:800}
 
       <fieldset>
         <legend>교통 · 상권</legend>
-        <div class="grid2">
-          <label class="f"><b>인접역 이름 *</b><input type="text" name="stationName" required placeholder="예: 상록수역"></label>
-          <label class="f"><b>연간 승하차 인원</b><input type="number" name="stationRides" inputmode="numeric" placeholder="예: 346659"></label>
-        </div>
-        <div class="toggle-group" id="toggle-station"><span class="hint">읍/면/동을 선택하면 근처 역이 뜹니다</span></div>
+        <label class="f"><b>연간 승하차 인원</b><input type="number" name="stationRides" inputmode="numeric" placeholder="예: 346659"></label>
         <label class="f"><b>동네 상권 점포 수</b><input type="number" name="stores" inputmode="numeric" placeholder="예: 3350"></label>
       </fieldset>
 
@@ -252,8 +261,6 @@ td.best{color:var(--accent-deep);font-weight:800}
           <label class="f"><b>해당 동 최고가</b><input type="number" name="dongAptPrice" inputmode="numeric" placeholder="예: 53000"></label>
           <label class="f">해당 동 평당가<input type="number" name="dongAptPy" inputmode="numeric" placeholder="예: 1690"></label>
         </div>
-        <label class="f"><b>재건축 대상 단지명 *</b> <span class="hint">(직접 입력 또는 아래 후보 목록에서 선택 — 준공이 오래된 순으로 나열. 2년 내 거래가 없으면 호갱노노 등에서 확인 후 직접 입력)</span><input type="text" name="rebuildAptName" required placeholder="예: 월드"></label>
-        <div class="toggle-group" id="toggle-rebuildApt"><span class="hint">정보 불러오기 후 여기서 단지를 고를 수 있음</span></div>
         <div class="grid2">
           <label class="f"><b>재건축 최고가</b><input type="number" name="rebuildAptPrice" inputmode="numeric" placeholder="예: 33000"></label>
           <label class="f">재건축 평당가<input type="number" name="rebuildAptPy" inputmode="numeric" placeholder="예: 2160"></label>
@@ -287,11 +294,6 @@ td.best{color:var(--accent-deep);font-weight:800}
         <legend>메모</legend>
         <label class="f"><textarea name="memo" rows="3" placeholder="자유 메모"></textarea></label>
       </fieldset>
-
-      <div class="btn-row">
-        <button type="button" class="btn primary" id="btn-fetch-info" onclick="fetchInfo()" style="flex:1">🔄 정보 불러오기 (실거래·전세·상권·인구·역승하차)</button>
-      </div>
-      <p class="hint" id="fetch-status"></p>
 
       <div class="btn-row">
         <button type="submit" class="btn primary" style="flex:1">저장</button>
@@ -965,9 +967,12 @@ function aggTrades(items){
     if(!price || !area) return;
     const py = Math.round(price/(area/3.3058));
     const buildYear = parseInt(it.buildYear,10) || 0;
-    const cur = byApt[apt] || (byApt[apt] = {max:0, py:0, n:0, umd:it.umdNm||"", buildYear:0});
+    // "최고가"가 아니라 "가장 최근 거래가"를 쓴다 — 2년치를 통째로 보면
+    // 옛날 고점이 오늘 시세처럼 보일 수 있어서, 최신 거래를 우선한다.
+    const dealKey = (+it.dealYear||0)*10000 + (+it.dealMonth||0)*100 + (+it.dealDay||0);
+    const cur = byApt[apt] || (byApt[apt] = {max:0, py:0, n:0, umd:it.umdNm||"", buildYear:0, dealKey:-1});
     cur.n++;
-    if(price>cur.max){ cur.max=price; cur.py=py; }
+    if(dealKey >= cur.dealKey){ cur.dealKey = dealKey; cur.max = price; cur.py = py; }
     if(buildYear>cur.buildYear) cur.buildYear = buildYear;
   });
   return byApt;
@@ -1102,27 +1107,18 @@ async function fetchInfo(){
   const btn = document.getElementById("btn-fetch-info");
   btn.disabled = true;
   try{
-    status.textContent = "▶ 매매 실거래 조회 중… (최근 6개월)";
-    let {trades, tradesUmd, rents} = await fetchTradesAndRents(lawd, umd, 6);
+    // 매매는 자주 안 일어나서 6개월 창으로는 자료가 없는 경우가 흔했다 —
+    // 처음부터 2년치를 한 번에 받고, 그 안에서 가장 최근 거래가를 쓴다
+    // (6개월→2년 재조회로 두 번 받던 것보다 오히려 빠르다).
+    status.textContent = "▶ 매매 실거래 조회 중… (최근 2년)";
+    const {trades, tradesUmd, rents} = await fetchTradesAndRents(lawd, umd, 24);
 
     const notes = [];
     const rkw = f.rebuildAptName.value.trim();
 
-    let newRanked = rankNewCandidates(trades);
-    let dongEntries = Object.entries(tradesUmd);
-    let rebuildHit = rkw ? pickApt(tradesUmd, rkw) : null;
-
-    // 6개월 내에 필요한 자료가 없으면 최대 2년까지 확대해서 다시 찾는다
-    // (매매는 드물게 일어나서 6개월 안에 거래가 아예 없는 단지가 흔하다).
-    if(!newRanked.length || !dongEntries.length || (rkw && !rebuildHit)){
-      status.textContent = "▶ 6개월 내 자료가 부족해 최대 2년까지 확대 조회 중…";
-      try{
-        ({trades, tradesUmd, rents} = await fetchTradesAndRents(lawd, umd, 24));
-        newRanked = rankNewCandidates(trades);
-        dongEntries = Object.entries(tradesUmd);
-        if(rkw) rebuildHit = pickApt(tradesUmd, rkw);
-      }catch(e){ notes.push(`2년 확대 조회 실패: ${e.message}`); }
-    }
+    const newRanked = rankNewCandidates(trades);
+    const dongEntries = Object.entries(tradesUmd);
+    const rebuildHit = rkw ? pickApt(tradesUmd, rkw) : null;
 
     // 신축 대표: 검색어 없이 자동 선정 — 시군구 전체에서 건축년도가 가장 최근이면서
     // 거래가 있는(노이즈 방지로 2건 이상 우선) 단지. 후보 목록에서 다른 단지로 바꿔도 된다.
