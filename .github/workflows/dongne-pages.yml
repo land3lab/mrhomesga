@@ -6,6 +6,7 @@ on:
       - claude/automate-news-posting-ChKWt   # 기본 브랜치
     paths:
       - "dongne/**"
+      - "callnote/**"
       - ".github/workflows/dongne-pages.yml"
   workflow_run:
     # dongne-auto.yml이 봇 계정으로 auto.json을 커밋·push하면 그 push는
@@ -52,6 +53,8 @@ jobs:
           cp -r dongne _site_build
           rm -f _site_build/config.template.js
           sed "s|__DATA_GO_KR_KEY__|${DATA_GO_KR_KEY}|" dongne/config.template.js > _site_build/config.js
+          # 통화노트 앱은 /callnote/ 하위 경로로 함께 배포 (키 주입 불필요 — 사용자가 앱 안에서 입력)
+          cp -r callnote _site_build/callnote
 
       - uses: actions/upload-pages-artifact@v3
         with:

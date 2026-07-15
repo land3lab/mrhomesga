@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a8f5c">
+<title>통화노트 — 매물·상담 자동정리</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+:root {
+  --bg: #f7f9f8;
+  --card: #ffffff;
+  --text: #1c2521;
+  --muted: #66746d;
+  --line: #dde5e1;
+  --accent: #0a8f5c;
+  --accent-soft: #e2f3ec;
+  --danger: #c0392b;
+  --blue: #2a78d6;
+  --blue-soft: #e4eefb;
+  --orange: #c96a11;
+  --orange-soft: #fbeedd;
+  --purple: #7a4fc9;
+  --purple-soft: #efe8fb;
+  --gray-soft: #eceff0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121715;
+    --card: #1c2320;
+    --text: #e6ece9;
+    --muted: #93a29a;
+    --line: #2c3631;
+    --accent: #35b57f;
+    --accent-soft: #17362a;
+    --danger: #e06052;
+    --blue: #5b9be0;
+    --blue-soft: #1b2c40;
+    --orange: #e0954a;
+    --orange-soft: #3a2a17;
+    --purple: #a684e0;
+    --purple-soft: #2c2340;
+    --gray-soft: #262d2a;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  font-size: 15px; line-height: 1.55;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+header {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--card); border-bottom: 1px solid var(--line);
+  padding: 10px 14px 0;
+}
+header .brand { display: flex; align-items: center; gap: 8px; }
+header h1 { font-size: 17px; margin: 0; }
+header .brand small { color: var(--muted); font-weight: normal; font-size: 12px; }
+nav.tabs { display: flex; gap: 4px; margin-top: 8px; }
+nav.tabs button {
+  flex: 1; border: none; background: none; color: var(--muted);
+  font-size: 14px; font-weight: 600; padding: 9px 4px;
+  border-bottom: 2.5px solid transparent; cursor: pointer;
+}
+nav.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+main { max-width: 680px; margin: 0 auto; padding: 14px 14px 60px; }
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 14px; padding: 14px; margin-bottom: 12px;
+}
+h2 { font-size: 15px; margin: 0 0 10px; }
+h3 { font-size: 14px; margin: 16px 0 6px; }
+label.f { display: block; font-size: 12.5px; color: var(--muted); margin: 10px 0 3px; font-weight: 600; }
+input[type=text], input[type=password], input[type=search], select, textarea {
+  width: 100%; padding: 9px 11px; font-size: 15px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--text); font-family: inherit;
+}
+textarea { resize: vertical; min-height: 64px; }
+textarea#transcript { min-height: 140px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1; min-width: 0; }
+button.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  font-size: 14px; font-weight: 600; font-family: inherit;
+  padding: 10px 14px; border-radius: 10px; cursor: pointer;
+}
+button.btn:active { transform: scale(.98); }
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.btn.danger { color: var(--danger); border-color: var(--danger); background: none; }
+button.btn.rec-on { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.btn:disabled { opacity: .5; cursor: default; }
+.btnbar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.btnbar .btn { flex: 1; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+.chips button {
+  border: 1px solid var(--line); background: var(--card); color: var(--muted);
+  font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+}
+.chips button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.badge {
+  display: inline-block; font-size: 11.5px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; vertical-align: 1px;
+}
+.badge.b-매물접수 { background: var(--accent-soft); color: var(--accent); }
+.badge.b-손님문의 { background: var(--blue-soft); color: var(--blue); }
+.badge.b-계약진행 { background: var(--purple-soft); color: var(--purple); }
+.badge.b-기타 { background: var(--gray-soft); color: var(--muted); }
+.rec-item { cursor: pointer; }
+.rec-item .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rec-item .who { font-weight: 700; font-size: 15px; }
+.rec-item .when { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.rec-item .meta { color: var(--muted); font-size: 13px; margin-top: 3px; }
+.rec-item .sum { margin-top: 5px; font-size: 14px; }
+.rec-item .todo { margin-top: 5px; font-size: 12.5px; color: var(--orange); background: var(--orange-soft); border-radius: 8px; padding: 4px 8px; }
+.rec-item a.tel { color: var(--accent); text-decoration: none; font-weight: 600; }
+.empty { text-align: center; color: var(--muted); padding: 36px 10px; font-size: 14px; }
+.hint { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
+.hint b { color: var(--text); }
+.status { font-size: 13.5px; margin-top: 8px; padding: 9px 11px; border-radius: 10px; display: none; }
+.status.show { display: block; }
+.status.info { background: var(--blue-soft); color: var(--blue); }
+.status.ok { background: var(--accent-soft); color: var(--accent); }
+.status.err { background: var(--orange-soft); color: var(--danger); }
+.filechip {
+  display: none; align-items: center; gap: 8px; margin-top: 8px;
+  background: var(--accent-soft); color: var(--accent);
+  border-radius: 10px; padding: 8px 11px; font-size: 13.5px; font-weight: 600;
+}
+.filechip.show { display: flex; }
+.filechip button { margin-left: auto; border: none; background: none; color: inherit; font-size: 15px; cursor: pointer; }
+.interim { color: var(--muted); font-size: 13px; font-style: italic; min-height: 1.2em; }
+details.guide { border-top: 1px solid var(--line); padding: 10px 0 2px; }
+details.guide summary { cursor: pointer; font-weight: 700; font-size: 14px; padding: 4px 0; }
+details.guide li { margin: 4px 0; font-size: 13.5px; }
+.flash { animation: flash 1.2s ease; }
+@keyframes flash { 0% { background: var(--accent-soft); } 100% { background: var(--bg); } }
+.hidden { display: none !important; }
+footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px 0 30px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>📞 통화노트</h1>
+    <small>매물 접수 · 고객 상담 자동정리</small>
+  </div>
+  <nav class="tabs">
+    <button id="tab-list" class="on">📋 목록</button>
+    <button id="tab-edit">＋ 새 기록</button>
+    <button id="tab-settings">⚙️ 설정·가이드</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ── 목록 ─────────────────────────────── -->
+<section id="view-list">
+  <input type="search" id="search" placeholder="이름 · 연락처 · 단지 · 내용 검색">
+  <div class="chips" id="filter-chips">
+    <button data-cat="" class="on">전체</button>
+    <button data-cat="매물접수">매물접수</button>
+    <button data-cat="손님문의">손님문의</button>
+    <button data-cat="계약진행">계약진행</button>
+    <button data-cat="기타">기타</button>
+  </div>
+  <div id="rec-list"></div>
+</section>
+
+<!-- ── 새 기록 / 편집 ────────────────────── -->
+<section id="view-edit" class="hidden">
+
+  <div class="card">
+    <h2 id="edit-title">1. 통화 내용 가져오기</h2>
+    <div class="btnbar" style="margin-top:0">
+      <button class="btn" id="btn-mic">🎙️ 받아쓰기 시작</button>
+      <button class="btn" id="btn-file">📁 녹음 파일</button>
+    </div>
+    <input type="file" id="file-input" accept="audio/*,video/3gpp,.m4a,.mp3,.amr,.aac,.ogg,.wav,.3gp" class="hidden">
+    <div class="filechip" id="file-chip"><span>🎧</span><span id="file-name"></span><button id="file-clear" title="파일 제거">✕</button></div>
+    <p class="hint">
+      <b>갤럭시:</b> 통화 끝나면 녹음 파일을 <b>공유 → 통화노트</b>로 보내거나 [📁 녹음 파일]로 선택 ·
+      <b>스피커폰 통화 중:</b> [🎙️ 받아쓰기] · <b>아이폰:</b> 통화 요약/메모 텍스트를 아래에 붙여넣기
+    </p>
+    <label class="f" for="transcript">통화 내용 (받아쓰기 결과 / 직접 입력·붙여넣기)</label>
+    <textarea id="transcript" placeholder="예) 봉천동 두산아파트 102동 집주인인데요, 32평 매매로 내놓으려고요. 8억 5천 생각하고 있어요…"></textarea>
+    <div class="interim" id="interim"></div>
+    <div class="btnbar">
+      <button class="btn primary" id="btn-ai">🤖 AI 자동 정리</button>
+    </div>
+    <div class="status" id="ai-status"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. 정리된 상담 카드 <span class="hint" style="display:inline">— 확인하고 수정하세요</span></h2>
+    <div id="form-fields"></div>
+  </div>
+
+  <div class="btnbar">
+    <button class="btn primary" id="btn-save">💾 저장</button>
+    <button class="btn" id="btn-copy">📋 복사</button>
+    <button class="btn danger hidden" id="btn-delete">🗑 삭제</button>
+  </div>
+  <div class="status" id="save-status"></div>
+</section>
+
+<!-- ── 설정·가이드 ───────────────────────── -->
+<section id="view-settings" class="hidden">
+
+  <div class="card">
+    <h2>🤖 AI 설정 (Google Gemini)</h2>
+    <p class="hint" style="margin-top:0">
+      녹음 파일 전사와 자동 정리에 Google Gemini API를 사용합니다 (무료 등급으로 충분).
+      <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>에서
+      구글 계정으로 로그인 → [API 키 만들기] → 아래에 붙여넣기.
+    </p>
+    <label class="f" for="api-key">Gemini API 키</label>
+    <div class="row">
+      <input type="password" id="api-key" placeholder="AIza…" autocomplete="off">
+      <button class="btn" id="key-toggle" style="flex:0 0 auto">👁</button>
+    </div>
+    <label class="f" for="model">모델 (기본값 권장)</label>
+    <input type="text" id="model" placeholder="gemini-2.5-flash">
+    <div class="btnbar"><button class="btn primary" id="btn-save-settings">저장</button></div>
+    <div class="status" id="settings-status"></div>
+    <p class="hint">키는 이 기기 브라우저(localStorage)에만 저장됩니다. [AI 자동 정리]를 누를 때만
+    통화 내용/녹음이 Google Gemini API로 전송되고, 그 외에는 모든 데이터가 기기 안에만 있습니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>📖 사용 가이드</h2>
+
+    <details class="guide" open>
+      <summary>갤럭시 (권장) — 통화녹음 파일 공유</summary>
+      <ol>
+        <li>전화 앱 → 우상단 ⋮ → 설정 → <b>통화 녹음 → 자동 녹음</b> 켜기 (모든 통화 자동 저장)</li>
+        <li>통화가 끝나면: 전화 앱 최근기록에서 녹음 재생 화면 → <b>공유</b> → <b>통화노트</b> 선택
+          (또는 내 파일 → 내장 메모리 → Recordings → Call)</li>
+        <li>앱이 자동으로 열리면 [🤖 AI 자동 정리] → 전사 + 상담 카드가 자동으로 채워짐 → 확인 후 저장</li>
+      </ol>
+      <p class="hint">※ 공유 목록에 "통화노트"가 보이려면 이 앱을 홈 화면에 <b>설치</b>해야 합니다
+      (Chrome 주소창 ⋮ → "앱 설치").</p>
+    </details>
+
+    <details class="guide">
+      <summary>스피커폰 통화 중 실시간 받아쓰기</summary>
+      <ol>
+        <li>전화가 오면 <b>스피커폰</b>으로 전환</li>
+        <li>통화노트를 열고 [🎙️ 받아쓰기 시작] → 대화가 실시간으로 텍스트로 쌓임</li>
+        <li>통화 종료 후 [🤖 AI 자동 정리]</li>
+      </ol>
+      <p class="hint">※ 기기 마이크 성능에 따라 상대방 음성 인식률이 낮을 수 있습니다.
+      중요한 통화는 녹음 파일 방식을 권장. (안드로이드 Chrome에서 가장 잘 동작)</p>
+    </details>
+
+    <details class="guide">
+      <summary>아이폰</summary>
+      <ol>
+        <li>iOS는 앱이 통화를 직접 녹음하는 것을 허용하지 않습니다.</li>
+        <li>iOS 18 이상: 통화 중 화면 좌상단 <b>녹음 버튼</b> → 통화 후 메모 앱에 녹음+전사가 저장됨
+          → 전사 텍스트를 복사해서 통화노트에 붙여넣고 [🤖 AI 자동 정리]</li>
+        <li>또는 통화 직후 [🎙️ 받아쓰기]를 켜고 내용을 말로 요약해도 됩니다.</li>
+      </ol>
+    </details>
+
+    <details class="guide">
+      <summary>데이터 보관 · 백업</summary>
+      <ul>
+        <li>상담 기록은 이 기기 브라우저에만 저장됩니다 (서버 없음).</li>
+        <li>폰↔PC 이동이나 백업은 아래 [내보내기]/[가져오기]를 사용하세요.</li>
+        <li>브라우저 데이터 삭제 시 기록도 지워지니 주기적으로 내보내기를 권장합니다.</li>
+      </ul>
+    </details>
+
+    <details class="guide">
+      <summary>⚖️ 통화 녹음 유의사항</summary>
+      <ul>
+        <li>본인이 참여한 통화의 녹음은 통신비밀보호법상 처벌 대상이 아니지만,
+          고객 신뢰를 위해 "통화 내용이 기록될 수 있다"고 안내하는 것을 권장합니다.</li>
+        <li>기록에는 개인정보(이름·연락처)가 포함되므로 기기 잠금·백업 파일 관리에 주의하세요.</li>
+      </ul>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>💾 백업</h2>
+    <div class="btnbar" style="margin-top:0">
+      <button class="btn" id="btn-export">⬇️ 내보내기 (JSON)</button>
+      <button class="btn" id="btn-import">⬆️ 가져오기</button>
+    </div>
+    <input type="file" id="import-input" accept=".json,application/json" class="hidden">
+    <div class="status" id="backup-status"></div>
+  </div>
+
+</section>
+
+</main>
+<footer>Mr. Homes GA · 통화노트</footer>
+
+<script>
+"use strict";
+
+/* ══════════════ 저장소 ══════════════ */
+const LS_RECORDS = "callnote_records";
+const LS_SETTINGS = "callnote_settings";
+
+function loadRecords() {
+  try { return JSON.parse(localStorage.getItem(LS_RECORDS)) || []; } catch { return []; }
+}
+function saveRecords(list) { localStorage.setItem(LS_RECORDS, JSON.stringify(list)); }
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(LS_SETTINGS)) || {}; } catch { return {}; }
+}
+function saveSettings(s) { localStorage.setItem(LS_SETTINGS, JSON.stringify(s)); }
+
+let records = loadRecords();
+let settings = loadSettings();
+
+/* ══════════════ 상담 카드 필드 정의 ══════════════ */
+const FIELDS = [
+  { k: "category", label: "구분", type: "select", options: ["매물접수", "손님문의", "계약진행", "기타"] },
+  { k: "name",     label: "이름", ph: "김철수" },
+  { k: "phone",    label: "연락처", ph: "010-1234-5678" },
+  { k: "role",     label: "고객 유형", type: "select", options: ["", "매도인", "임대인", "매수 희망", "임차 희망", "세입자", "기타"] },
+  { k: "propertyType", label: "물건 종류", type: "select", options: ["", "아파트", "오피스텔", "빌라/다세대", "단독/다가구", "상가", "사무실", "토지", "기타"] },
+  { k: "dealType", label: "거래 유형", type: "select", options: ["", "매매", "전세", "월세", "단기", "기타"] },
+  { k: "address",  label: "주소 / 단지 / 동호수", ph: "봉천동 두산아파트 102동 1204호" },
+  { k: "priceSale",    label: "매매가", ph: "8억 5천", half: 1 },
+  { k: "priceDeposit", label: "보증금(전세금)", ph: "3억", half: 2 },
+  { k: "priceMonthly", label: "월세", ph: "120만원", half: 1 },
+  { k: "area",         label: "면적/평형", ph: "32평(84㎡)", half: 2 },
+  { k: "floor",   label: "층", ph: "12층 / 총 20층", half: 1 },
+  { k: "rooms",   label: "방/욕실", ph: "방3 욕2", half: 2 },
+  { k: "moveIn",  label: "입주 가능일 / 희망 시기", ph: "즉시, 10월 초 등" },
+  { k: "needs",   label: "희망 조건 (손님문의)", type: "textarea", ph: "예산 전세 4억 이내, 초등학교 근처, 3룸 이상…" },
+  { k: "features", label: "특이사항 (한 줄에 하나)", type: "textarea", ph: "올수리 완료\n주차 2대 가능\n반려동물 상의" },
+  { k: "followUps", label: "다음 할 일 (한 줄에 하나)", type: "textarea", ph: "토요일 2시 집 보여주기\n등기부등본 확인 후 회신" },
+  { k: "summary", label: "한 줄 요약", type: "textarea" },
+];
+const LIST_KEYS = ["features", "followUps"]; // 배열로 다루는 필드
+
+function emptyFields() {
+  const o = {};
+  FIELDS.forEach(f => { o[f.k] = LIST_KEYS.includes(f.k) ? [] : ""; });
+  o.category = "매물접수";
+  return o;
+}
+
+/* ══════════════ 화면 전환 ══════════════ */
+const views = { list: el("view-list"), edit: el("view-edit"), settings: el("view-settings") };
+const tabs = { list: el("tab-list"), edit: el("tab-edit"), settings: el("tab-settings") };
+function el(id) { return document.getElementById(id); }
+
+function show(name) {
+  Object.entries(views).forEach(([k, v]) => v.classList.toggle("hidden", k !== name));
+  Object.entries(tabs).forEach(([k, t]) => t.classList.toggle("on", k === name));
+  window.scrollTo(0, 0);
+}
+tabs.list.onclick = () => { stopMic(); renderList(); show("list"); };
+tabs.edit.onclick = () => { openEdit(null); };
+tabs.settings.onclick = () => { stopMic(); show("settings"); };
+
+/* ══════════════ 목록 ══════════════ */
+let filterCat = "";
+el("filter-chips").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  filterCat = b.dataset.cat;
+  el("filter-chips").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  renderList();
+});
+el("search").addEventListener("input", renderList);
+
+function fmtDate(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, "0");
+  return `${String(d.getFullYear()).slice(2)}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function recSearchText(r) {
+  return Object.values(r.fields).flat().join(" ") + " " + (r.transcript || "");
+}
+
+function renderList() {
+  const q = el("search").value.trim().toLowerCase();
+  const box = el("rec-list");
+  const shown = records
+    .filter(r => !filterCat || r.fields.category === filterCat)
+    .filter(r => !q || recSearchText(r).toLowerCase().includes(q))
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  if (!shown.length) {
+    box.innerHTML = `<div class="empty">${records.length ? "검색 결과가 없습니다." :
+      "아직 기록이 없습니다.<br><br>통화가 끝나면 <b>[＋ 새 기록]</b>에서<br>녹음 파일이나 받아쓰기로 시작해 보세요."}</div>`;
+    return;
+  }
+  box.innerHTML = shown.map(r => {
+    const f = r.fields;
+    const prices = [f.priceSale && "매매 " + f.priceSale,
+      f.priceDeposit && "보증금 " + f.priceDeposit,
+      f.priceMonthly && "월세 " + f.priceMonthly].filter(Boolean);
+    const showDeal = f.dealType && !prices.some(p => p.startsWith(f.dealType)); // "매매 · 매매 8억" 중복 방지
+    const meta = [f.propertyType, showDeal ? f.dealType : "", ...prices, f.address].filter(Boolean).join(" · ");
+    const todo = (f.followUps || []).filter(Boolean);
+    return `<div class="card rec-item" data-id="${r.id}">
+      <div class="top">
+        <span class="badge b-${esc(f.category)}">${esc(f.category)}</span>
+        <span class="who">${esc(f.name || "이름 미상")}</span>
+        ${f.phone ? `<a class="tel" href="tel:${esc(f.phone.replace(/[^0-9+]/g, ""))}" onclick="event.stopPropagation()">${esc(f.phone)}</a>` : ""}
+        <span class="when">${fmtDate(r.createdAt)}</span>
+      </div>
+      ${meta ? `<div class="meta">${esc(meta)}</div>` : ""}
+      ${f.summary ? `<div class="sum">${esc(f.summary)}</div>` : ""}
+      ${todo.length ? `<div class="todo">☑️ ${esc(todo[0])}${todo.length > 1 ? ` 외 ${todo.length - 1}건` : ""}</div>` : ""}
+    </div>`;
+  }).join("");
+  box.querySelectorAll(".rec-item").forEach(item => {
+    item.onclick = () => openEdit(item.dataset.id);
+  });
+}
+
+/* ══════════════ 편집 폼 ══════════════ */
+let editingId = null;   // null = 새 기록
+let pendingAudio = null; // File
+
+function buildForm() {
+  const box = el("form-fields");
+  let html = "", i = 0;
+  while (i < FIELDS.length) {
+    const f = FIELDS[i];
+    const next = FIELDS[i + 1];
+    if (f.half === 1 && next && next.half === 2) {
+      html += `<div class="row">${fieldHtml(f)}${fieldHtml(next)}</div>`;
+      i += 2;
+    } else { html += fieldHtml(f); i += 1; }
+  }
+  box.innerHTML = html;
+}
+function fieldHtml(f) {
+  const id = "fld-" + f.k;
+  let input;
+  if (f.type === "select") {
+    input = `<select id="${id}">` + f.options.map(o =>
+      `<option value="${esc(o)}">${o === "" ? "— 선택 —" : esc(o)}</option>`).join("") + `</select>`;
+  } else if (f.type === "textarea") {
+    input = `<textarea id="${id}" placeholder="${esc(f.ph || "")}"></textarea>`;
+  } else {
+    input = `<input type="text" id="${id}" placeholder="${esc(f.ph || "")}">`;
+  }
+  return `<div><label class="f" for="${id}">${esc(f.label)}</label>${input}</div>`;
+}
+
+function fillForm(fields) {
+  FIELDS.forEach(f => {
+    const node = el("fld-" + f.k);
+    const v = fields[f.k];
+    node.value = LIST_KEYS.includes(f.k) ? (Array.isArray(v) ? v.join("\n") : (v || "")) : (v || "");
+  });
+}
+function collectForm() {
+  const o = {};
+  FIELDS.forEach(f => {
+    const v = el("fld-" + f.k).value;
+    o[f.k] = LIST_KEYS.includes(f.k) ? v.split("\n").map(s => s.trim()).filter(Boolean) : v.trim();
+  });
+  return o;
+}
+
+function openEdit(id) {
+  stopMic();
+  editingId = id;
+  clearPendingAudio();
+  hideStatus("ai-status"); hideStatus("save-status");
+  const rec = id ? records.find(r => r.id === id) : null;
+  el("edit-title").textContent = rec ? "통화 내용" : "1. 통화 내용 가져오기";
+  el("transcript").value = rec ? (rec.transcript || "") : "";
+  fillForm(rec ? rec.fields : emptyFields());
+  el("btn-delete").classList.toggle("hidden", !rec);
+  tabs.edit.textContent = rec ? "✏️ 기록 편집" : "＋ 새 기록";
+  show("edit");
+}
+
+/* ══════════════ 받아쓰기 (Web Speech API) ══════════════ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null, micOn = false;
+
+el("btn-mic").onclick = () => { micOn ? stopMic() : startMic(); };
+
+function startMic() {
+  if (!SR) {
+    showStatus("ai-status", "err", "이 브라우저는 실시간 받아쓰기를 지원하지 않습니다. Chrome(안드로이드/PC) 사용을 권장하며, 녹음 파일 방식은 계속 쓸 수 있습니다.");
+    return;
+  }
+  recog = new SR();
+  recog.lang = "ko-KR";
+  recog.continuous = true;
+  recog.interimResults = true;
+  recog.onresult = (e) => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        const ta = el("transcript");
+        ta.value = (ta.value ? ta.value.replace(/\s+$/, "") + "\n" : "") + t.trim();
+        ta.scrollTop = ta.scrollHeight;
+      } else interim += t;
+    }
+    el("interim").textContent = interim;
+  };
+  recog.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      stopMic();
+      showStatus("ai-status", "err", "마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크를 허용해 주세요.");
+    }
+  };
+  recog.onend = () => { if (micOn) { try { recog.start(); } catch {} } }; // 무음으로 끊기면 자동 재시작
+  try { recog.start(); } catch {}
+  micOn = true;
+  el("btn-mic").textContent = "⏹ 받아쓰기 중지";
+  el("btn-mic").classList.add("rec-on");
+}
+function stopMic() {
+  micOn = false;
+  if (recog) { try { recog.stop(); } catch {} recog = null; }
+  el("interim").textContent = "";
+  el("btn-mic").textContent = "🎙️ 받아쓰기 시작";
+  el("btn-mic").classList.remove("rec-on");
+}
+
+/* ══════════════ 녹음 파일 ══════════════ */
+el("btn-file").onclick = () => el("file-input").click();
+el("file-input").onchange = (e) => { if (e.target.files[0]) setPendingAudio(e.target.files[0]); e.target.value = ""; };
+el("file-clear").onclick = clearPendingAudio;
+
+function setPendingAudio(file) {
+  if (file.size > 19 * 1024 * 1024) {
+    showStatus("ai-status", "err", `파일이 너무 큽니다 (${(file.size / 1048576).toFixed(1)}MB). 20MB 이하만 가능해요 — 통화가 아주 길면 나눠서 올려주세요.`);
+    return;
+  }
+  pendingAudio = file;
+  el("file-name").textContent = `${file.name} (${(file.size / 1048576).toFixed(1)}MB)`;
+  el("file-chip").classList.add("show");
+  showStatus("ai-status", "info", "녹음 파일 준비 완료 — [🤖 AI 자동 정리]를 누르면 받아쓰기와 정리를 한 번에 합니다.");
+}
+function clearPendingAudio() {
+  pendingAudio = null;
+  el("file-chip").classList.remove("show");
+}
+
+function guessMime(file) {
+  if (file.type) return file.type;
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  return { m4a: "audio/mp4", mp3: "audio/mpeg", amr: "audio/amr", "3gp": "video/3gpp",
+    aac: "audio/aac", ogg: "audio/ogg", wav: "audio/wav", opus: "audio/opus" }[ext] || "audio/mpeg";
+}
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+/* ══════════════ Gemini AI 정리 ══════════════ */
+const PROMPT = `당신은 한국 부동산 중개사무소의 통화 기록 정리 비서입니다.
+아래 통화 내용(부동산 매물 접수 또는 고객 상담 전화)을 분석해서 JSON으로 정리하세요.
+
+규칙:
+- 통화에서 언급되지 않은 항목은 빈 문자열("") 또는 빈 배열로 두세요. 절대 추측해서 채우지 마세요.
+- 금액은 말한 그대로의 한국식 단위를 유지하세요. 예: "8억 5천", "보증금 3억", "월세 120만원"
+- phone(전화번호)은 숫자와 하이픈만 남기세요.
+- category 판단: 집주인/임대인이 물건을 내놓는 전화 → "매물접수", 집·상가를 구하는 손님 문의 → "손님문의", 진행 중인 계약/잔금/서류 관련 → "계약진행", 그 외 → "기타"
+- features: 수리 상태, 옵션, 주차, 반려동물, 조망, 입주 조건 등 물건 특이사항을 짧은 항목들로.
+- needs: 손님문의인 경우 희망 지역·예산·조건을 한두 문장으로.
+- followUps: 방문 약속, 다시 연락, 서류 준비 등 해야 할 일을 날짜·시간 포함해 항목별로.
+- summary: 전체 내용을 한 문장으로 요약.`;
+
+const PROMPT_AUDIO_EXTRA = `
+- transcript: 첨부된 통화 녹음 전체를 한국어로 받아쓰기하세요. 화자가 구분되면 줄마다 "중개사:" / "고객:"을 붙이세요.`;
+
+function geminiSchema(withTranscript) {
+  const p = {
+    category: { type: "STRING", enum: ["매물접수", "손님문의", "계약진행", "기타"] },
+    summary: { type: "STRING" },
+    name: { type: "STRING" }, phone: { type: "STRING" }, role: { type: "STRING" },
+    propertyType: { type: "STRING" }, dealType: { type: "STRING" }, address: { type: "STRING" },
+    priceSale: { type: "STRING" }, priceDeposit: { type: "STRING" }, priceMonthly: { type: "STRING" },
+    area: { type: "STRING" }, floor: { type: "STRING" }, rooms: { type: "STRING" }, moveIn: { type: "STRING" },
+    needs: { type: "STRING" },
+    features: { type: "ARRAY", items: { type: "STRING" } },
+    followUps: { type: "ARRAY", items: { type: "STRING" } },
+  };
+  if (withTranscript) p.transcript = { type: "STRING" };
+  return { type: "OBJECT", properties: p, required: ["category", "summary"] };
+}
+
+async function callGemini(parts, withTranscript) {
+  const key = (settings.apiKey || "").trim();
+  if (!key) throw new Error("NO_KEY");
+  const model = (settings.model || "").trim() || "gemini-2.5-flash";
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts }],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: geminiSchema(withTranscript),
+        },
+      }),
+    }
+  );
+  if (!res.ok) {
+    let msg = `API 오류 (HTTP ${res.status})`;
+    try { msg += ": " + ((await res.json()).error?.message || "").slice(0, 200); } catch {}
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
+  if (!text) throw new Error("AI 응답이 비어 있습니다. 잠시 후 다시 시도해 주세요.");
+  return JSON.parse(text);
+}
+
+el("btn-ai").onclick = async () => {
+  stopMic();
+  const text = el("transcript").value.trim();
+  if (!pendingAudio && !text) {
+    showStatus("ai-status", "err", "먼저 통화 내용을 준비해 주세요 — 녹음 파일을 올리거나, 받아쓰기하거나, 직접 붙여넣기.");
+    return;
+  }
+  if (!(settings.apiKey || "").trim()) {
+    showStatus("ai-status", "err", "Gemini API 키가 없습니다. [⚙️ 설정·가이드] 탭에서 키를 먼저 등록해 주세요 (1분, 무료).");
+    return;
+  }
+  const btn = el("btn-ai");
+  btn.disabled = true;
+  try {
+    let result;
+    if (pendingAudio) {
+      showStatus("ai-status", "info", "⏳ 녹음을 받아쓰고 정리하는 중… (통화 길이에 따라 10초~1분)");
+      const b64 = await fileToBase64(pendingAudio);
+      result = await callGemini([
+        { text: PROMPT + PROMPT_AUDIO_EXTRA + (text ? `\n\n참고 메모:\n${text}` : "") },
+        { inlineData: { mimeType: guessMime(pendingAudio), data: b64 } },
+      ], true);
+      if (result.transcript) el("transcript").value = result.transcript;
+    } else {
+      showStatus("ai-status", "info", "⏳ 통화 내용을 정리하는 중…");
+      result = await callGemini([{ text: PROMPT + "\n\n통화 내용:\n" + text }], false);
+    }
+    const fields = emptyFields();
+    FIELDS.forEach(f => {
+      let v = result[f.k];
+      if (v == null) return;
+      if (LIST_KEYS.includes(f.k)) fields[f.k] = Array.isArray(v) ? v.filter(Boolean) : String(v).split("\n").filter(Boolean);
+      else if (f.type === "select" && f.options && !f.options.includes(String(v))) fields[f.k] = f.options.includes("기타") ? "기타" : "";
+      else fields[f.k] = String(v);
+    });
+    fillForm(fields);
+    el("form-fields").classList.add("flash");
+    setTimeout(() => el("form-fields").classList.remove("flash"), 1300);
+    showStatus("ai-status", "ok", "✅ 정리 완료! 아래 카드를 확인·수정한 뒤 [💾 저장]을 눌러주세요.");
+    el("form-fields").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (err) {
+    showStatus("ai-status", "err",
+      err.message === "NO_KEY" ? "Gemini API 키가 없습니다. [⚙️ 설정·가이드]에서 등록해 주세요."
+      : "정리 실패 — " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+/* ══════════════ 저장 / 삭제 / 복사 ══════════════ */
+el("btn-save").onclick = () => {
+  const fields = collectForm();
+  const transcript = el("transcript").value.trim();
+  if (!transcript && !fields.name && !fields.summary && !fields.address) {
+    showStatus("save-status", "err", "저장할 내용이 없습니다.");
+    return;
+  }
+  const now = Date.now();
+  if (editingId) {
+    const r = records.find(x => x.id === editingId);
+    if (r) { r.fields = fields; r.transcript = transcript; r.updatedAt = now; }
+  } else {
+    records.push({ id: "r" + now + Math.random().toString(36).slice(2, 7), createdAt: now, updatedAt: now, fields, transcript });
+  }
+  saveRecords(records);
+  renderList();
+  show("list");
+  tabs.edit.textContent = "＋ 새 기록";
+};
+
+el("btn-delete").onclick = () => {
+  if (!editingId) return;
+  if (!confirm("이 상담 기록을 삭제할까요?")) return;
+  records = records.filter(r => r.id !== editingId);
+  saveRecords(records);
+  renderList();
+  show("list");
+  tabs.edit.textContent = "＋ 새 기록";
+};
+
+function recordToText(fields, createdAt) {
+  const L = [];
+  L.push(`[${fields.category || "기록"}] ${fields.name || "이름 미상"}${fields.phone ? " " + fields.phone : ""}${fields.role ? ` (${fields.role})` : ""}`);
+  const obj = [fields.propertyType, fields.dealType].filter(Boolean).join(" ");
+  if (obj || fields.address) L.push(`■ 물건: ${[obj, fields.address].filter(Boolean).join(" — ")}`);
+  const price = [fields.priceSale && "매매 " + fields.priceSale,
+    fields.priceDeposit && "보증금 " + fields.priceDeposit,
+    fields.priceMonthly && "월세 " + fields.priceMonthly].filter(Boolean).join(" / ");
+  if (price) L.push(`■ 가격: ${price}`);
+  const spec = [fields.area, fields.floor, fields.rooms].filter(Boolean).join(" / ");
+  if (spec) L.push(`■ 면적·층·구조: ${spec}`);
+  if (fields.moveIn) L.push(`■ 입주: ${fields.moveIn}`);
+  if (fields.needs) L.push(`■ 희망 조건: ${fields.needs}`);
+  (fields.features || []).forEach(x => L.push(`■ 특이사항: ${x}`));
+  (fields.followUps || []).forEach(x => L.push(`☑️ 할 일: ${x}`));
+  if (fields.summary) L.push(`— ${fields.summary}`);
+  if (createdAt) L.push(`(${fmtDate(createdAt)} 통화)`);
+  return L.join("\n");
+}
+
+el("btn-copy").onclick = async () => {
+  const text = recordToText(collectForm(), editingId ? records.find(r => r.id === editingId)?.createdAt : Date.now());
+  try {
+    await navigator.clipboard.writeText(text);
+    showStatus("save-status", "ok", "📋 복사 완료 — 카톡·문자에 붙여넣으세요.");
+  } catch {
+    prompt("아래 내용을 길게 눌러 복사하세요", text);
+  }
+};
+
+/* ══════════════ 설정 ══════════════ */
+function initSettings() {
+  el("api-key").value = settings.apiKey || "";
+  el("model").value = settings.model || "";
+}
+el("btn-save-settings").onclick = () => {
+  settings.apiKey = el("api-key").value.trim();
+  settings.model = el("model").value.trim();
+  saveSettings(settings);
+  showStatus("settings-status", "ok", "저장되었습니다." + (settings.apiKey ? "" : " (키가 비어 있어 AI 정리는 동작하지 않습니다)"));
+};
+el("key-toggle").onclick = () => {
+  const k = el("api-key");
+  k.type = k.type === "password" ? "text" : "password";
+};
+
+/* ══════════════ 백업 ══════════════ */
+el("btn-export").onclick = () => {
+  const blob = new Blob([JSON.stringify({ app: "callnote", exportedAt: new Date().toISOString(), records }, null, 2)],
+    { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `통화노트_백업_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showStatus("backup-status", "ok", `기록 ${records.length}건을 내보냈습니다.`);
+};
+el("btn-import").onclick = () => el("import-input").click();
+el("import-input").onchange = async (e) => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const incoming = Array.isArray(data) ? data : data.records;
+    if (!Array.isArray(incoming)) throw new Error("형식이 다릅니다");
+    let added = 0, updated = 0;
+    incoming.forEach(r => {
+      if (!r || !r.id || !r.fields) return;
+      const mine = records.find(x => x.id === r.id);
+      if (!mine) { records.push(r); added++; }
+      else if ((r.updatedAt || 0) > (mine.updatedAt || 0)) { Object.assign(mine, r); updated++; }
+    });
+    saveRecords(records);
+    renderList();
+    showStatus("backup-status", "ok", `가져오기 완료 — 추가 ${added}건, 갱신 ${updated}건.`);
+  } catch (err) {
+    showStatus("backup-status", "err", "가져오기 실패 — 통화노트에서 내보낸 JSON 파일인지 확인해 주세요.");
+  }
+};
+
+/* ══════════════ 상태 메시지 ══════════════ */
+function showStatus(id, kind, msg) {
+  const n = el(id);
+  n.className = `status show ${kind}`;
+  n.textContent = msg;
+}
+function hideStatus(id) { el(id).className = "status"; }
+
+/* ══════════════ 공유 수신 (share_target) ══════════════ */
+async function checkShared() {
+  if (!new URLSearchParams(location.search).has("shared")) return;
+  history.replaceState(null, "", location.pathname); // 새로고침 시 중복 방지
+  try {
+    const cache = await caches.open("callnote-share");
+    const fileRes = await cache.match("./shared-file");
+    const textRes = await cache.match("./shared-text");
+    openEdit(null);
+    if (fileRes) {
+      const blob = await fileRes.blob();
+      const name = decodeURIComponent(fileRes.headers.get("X-File-Name") || "통화녹음");
+      setPendingAudio(new File([blob], name, { type: blob.type }));
+      await cache.delete("./shared-file");
+    }
+    if (textRes) {
+      const t = (await textRes.text()).trim();
+      if (t) el("transcript").value = t;
+      await cache.delete("./shared-text");
+    }
+    if (pendingAudio || el("transcript").value) {
+      showStatus("ai-status", "info", "공유받은 내용이 준비되었습니다 — [🤖 AI 자동 정리]를 눌러주세요.");
+    }
+  } catch (e) { /* 캐시 접근 불가 환경이면 조용히 무시 */ }
+}
+
+/* ══════════════ 시작 ══════════════ */
+buildForm();
+fillForm(emptyFields());
+initSettings();
+renderList();
+checkShared();
+
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
