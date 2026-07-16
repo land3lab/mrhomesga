@@ -143,6 +143,18 @@ details.guide li { margin: 4px 0; font-size: 13.5px; }
 .flash { animation: flash 1.2s ease; }
 @keyframes flash { 0% { background: var(--accent-soft); } 100% { background: var(--bg); } }
 .hidden { display: none !important; }
+.modal {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0, 0, 0, .5);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.modal-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; padding: 20px 18px; max-width: 360px; width: 100%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+.modal-card h2 { margin: 0 0 8px; font-size: 16px; }
+.modal-card p { margin: 0; font-size: 14px; color: var(--muted); word-break: break-all; }
 footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px 0 30px; }
 </style>
 </head>
@@ -262,6 +274,23 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
     </details>
 
     <details class="guide">
+      <summary>🎙️ 마이크 권한 설정 (받아쓰기가 안 될 때)</summary>
+      <ol>
+        <li>처음 [🎙️ 받아쓰기 시작]을 누르면 브라우저가 마이크 허용을 물어봅니다 → <b>허용</b>을 누르면 끝.</li>
+        <li>실수로 <b>차단</b>했다면 다시 물어보지 않으므로 직접 풀어야 합니다:
+          <ul>
+            <li><b>안드로이드 Chrome(브라우저로 쓸 때)</b>: 주소창 왼쪽 자물쇠(🔒/⚙) 터치 → 권한 → <b>마이크 → 허용</b></li>
+            <li><b>홈 화면에 설치한 통화노트 앱</b>: 앱 화면 우상단 ⋮ → <b>앱 정보</b>(또는 ⓘ) → 권한 → 마이크 → 허용.
+              또는 폰 설정 → 애플리케이션 → <b>통화노트</b>(없으면 Chrome) → 권한 → 마이크</li>
+            <li><b>아이폰 Safari</b>: 주소창 왼쪽 <b>ᴀA</b> → 웹사이트 설정 → 마이크 → 허용.
+              안 보이면 폰 설정 → Safari(또는 설정 → 앱 → Safari) → 마이크</li>
+          </ul>
+        </li>
+        <li>폰 자체 마이크가 꺼진 경우: 설정 → 개인정보 보호 → 권한 관리자 → 마이크에서 Chrome이 허용인지 확인.</li>
+      </ol>
+    </details>
+
+    <details class="guide">
       <summary>아이폰</summary>
       <ol>
         <li>iOS는 앱이 통화를 직접 녹음하는 것을 허용하지 않습니다.</li>
@@ -303,6 +332,19 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
 </section>
 
 </main>
+
+<!-- 공유 수신 시 "정리할까요?" 팝업 -->
+<div id="share-modal" class="modal hidden">
+  <div class="modal-card">
+    <h2>🎧 통화 기록이 도착했어요</h2>
+    <p id="share-modal-desc"></p>
+    <div class="btnbar">
+      <button class="btn primary" id="share-yes">🤖 지금 AI로 정리</button>
+      <button class="btn" id="share-no">나중에 직접</button>
+    </div>
+  </div>
+</div>
+
 <footer>Mr. Homes GA · 통화노트</footer>
 
 <script>
@@ -823,11 +865,23 @@ async function checkShared() {
       if (t) el("transcript").value = t;
       await cache.delete("./shared-text");
     }
-    if (pendingAudio || el("transcript").value) {
-      showStatus("ai-status", "info", "공유받은 내용이 준비되었습니다 — [🤖 AI 자동 정리]를 눌러주세요.");
+    if (pendingAudio || el("transcript").value.trim()) {
+      el("share-modal-desc").textContent = pendingAudio
+        ? `"${pendingAudio.name}" 녹음을 AI가 받아쓰고 상담 카드로 정리할까요?`
+        : "공유받은 텍스트를 AI가 상담 카드로 정리할까요?";
+      el("share-modal").classList.remove("hidden");
     }
   } catch (e) { /* 캐시 접근 불가 환경이면 조용히 무시 */ }
 }
+
+el("share-yes").onclick = () => {
+  el("share-modal").classList.add("hidden");
+  el("btn-ai").click();
+};
+el("share-no").onclick = () => {
+  el("share-modal").classList.add("hidden");
+  showStatus("ai-status", "info", "준비되어 있어요 — 언제든 [🤖 AI 자동 정리]를 누르면 됩니다.");
+};
 
 /* ══════════════ 시작 ══════════════ */
 buildForm();
