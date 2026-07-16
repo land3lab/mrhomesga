@@ -1,0 +1,58 @@
+name: 통화노트 안드로이드 APK 빌드
+
+on:
+  push:
+    paths:
+      - "callnote-android/**"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # 릴리스에 APK 업로드
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: APK 빌드 (서명 포함)
+        run: gradle -p callnote-android :app:assembleRelease
+
+      - name: APK 이름 정리
+        run: cp callnote-android/app/build/outputs/apk/release/app-release.apk callnote.apk
+
+      # 모든 브랜치: 빌드 결과를 Actions 아티팩트로 보관 (빌드 검증용)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: callnote-apk
+          path: callnote.apk
+
+      # 기본 브랜치에서만: "callnote-android" 릴리스에 최신 APK 게시
+      # → 폰에서 https://github.com/land3lab/mrhomesga/releases 로 바로 다운로드
+      - name: 릴리스에 APK 게시
+        if: github.ref == 'refs/heads/claude/automate-news-posting-ChKWt'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: callnote-android
+          name: 통화노트 안드로이드 앱 (최신)
+          body: |
+            폰에서 아래 **callnote.apk**를 다운로드해 설치하세요.
+
+            1. 다운로드 후 파일 열기 → "출처를 알 수 없는 앱" 허용 (Chrome/내파일에 설치 권한)
+            2. 앱 첫 실행 시 전화/알림/오디오 권한 **허용**
+            3. ⚙️ 설정 탭에서 Gemini API 키 입력 (웹과 별도 저장)
+            4. 갤럭시 전화 앱에서 "통화 자동 녹음" 켜기
+
+            이후 통화가 끝나면 "통화 녹음이 저장됐어요" 알림이 자동으로 뜨고,
+            탭하면 AI 정리 여부를 선택할 수 있습니다.
+          files: callnote.apk

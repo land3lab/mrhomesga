@@ -883,6 +883,31 @@ el("share-no").onclick = () => {
   showStatus("ai-status", "info", "준비되어 있어요 — 언제든 [🤖 AI 자동 정리]를 누르면 됩니다.");
 };
 
+/* ══════════════ 네이티브 안드로이드 앱 브릿지 ══════════════
+   통화노트 안드로이드 앱(callnote-android)이 통화 종료 후 녹음 파일을
+   base64 조각으로 주입한다. begin → chunk… → end 순서로 호출된다. */
+let nativeShare = null;
+window.__nativeShareBegin = (name, mime) => { nativeShare = { name, mime, parts: [] }; };
+window.__nativeShareChunk = (b64) => { if (nativeShare) nativeShare.parts.push(b64); };
+window.__nativeShareEnd = () => {
+  if (!nativeShare) return;
+  try {
+    const bin = atob(nativeShare.parts.join(""));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    openEdit(null);
+    setPendingAudio(new File([bytes], nativeShare.name || "통화녹음.m4a", { type: nativeShare.mime || "audio/mp4" }));
+    if (pendingAudio) { // 크기 초과 등으로 거부되지 않았을 때만 팝업
+      el("share-modal-desc").textContent = `"${pendingAudio.name}" 녹음을 AI가 받아쓰고 상담 카드로 정리할까요?`;
+      el("share-modal").classList.remove("hidden");
+    }
+  } catch (e) {
+    showStatus("ai-status", "err", "녹음 파일을 불러오지 못했습니다 — 다시 시도해 주세요.");
+  } finally {
+    nativeShare = null;
+  }
+};
+
 /* ══════════════ 시작 ══════════════ */
 buildForm();
 fillForm(emptyFields());

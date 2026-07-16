@@ -3,9 +3,10 @@
 인터넷 뉴스에서 **부동산 / 서울시 관악구** 관련 기사를 자동 수집하고,
 Claude AI로 **블로그 포스트 + 카드뉴스**를 생성한 뒤 **Tistory 블로그**와 **Instagram**에 자동 업로드합니다.
 
-> 이 저장소에는 별도 앱 두 개가 함께 있습니다:
+> 이 저장소에는 별도 앱들이 함께 있습니다:
 > - [`dongne/`](dongne/README.md) — 재건축 동네분석 PWA
 > - [`callnote/`](callnote/README.md) — 📞 통화노트: 통화 녹음/받아쓰기를 AI가 매물 접수·고객 상담 카드로 자동 정리하는 PWA
+> - [`callnote-android/`](callnote-android/README.md) — 📱 통화노트 안드로이드 앱: 통화 종료를 자동 감지해 녹음 정리 알림을 띄우는 네이티브 래퍼
 
 ## 아키텍처
 
