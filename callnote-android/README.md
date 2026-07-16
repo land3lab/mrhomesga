@@ -65,3 +65,5 @@ Android Studio에서 `callnote-android/`를 열거나:
 cd callnote-android && gradle :app:assembleRelease
 # → app/build/outputs/apk/release/app-release.apk
 ```
+
+<!-- 빌드 트리거: 2026-07-17 릴리스 게시 재시도 -->
