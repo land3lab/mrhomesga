@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 통화 시작/종료 감지 -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- 방금 통화한 상대방 번호를 상담 카드에 자동 입력 -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <!-- 통화 종료 후 "정리할까요?" 알림 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 통화 녹음 파일(미디어저장소) 읽기 -->

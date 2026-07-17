@@ -12,7 +12,7 @@ object NotifyHelper {
     private const val CHANNEL_ID = "callnote_recording"
     private const val NOTIFICATION_ID = 1004
 
-    fun showRecordingNotification(context: Context, audioUri: Uri, fileName: String) {
+    fun showRecordingNotification(context: Context, audioUri: Uri, fileName: String, call: CallInfo?) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
             NotificationChannel(
@@ -26,6 +26,11 @@ object NotifyHelper {
             action = MainActivity.ACTION_PROCESS_RECORDING
             putExtra(MainActivity.EXTRA_AUDIO_URI, audioUri.toString())
             putExtra(MainActivity.EXTRA_AUDIO_NAME, fileName)
+            if (call != null) {
+                putExtra(MainActivity.EXTRA_CALL_PHONE, call.number)
+                putExtra(MainActivity.EXTRA_CALL_TYPE, call.type)
+                putExtra(MainActivity.EXTRA_CALL_NAME, call.contactName)
+            }
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         val pending = PendingIntent.getActivity(
@@ -35,9 +40,12 @@ object NotifyHelper {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
+        val who = call?.let {
+            listOf(it.contactName, it.number).filter { s -> s.isNotBlank() }.joinToString(" ")
+        }?.takeIf { it.isNotBlank() }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_call)
-            .setContentTitle("통화 녹음이 저장됐어요")
+            .setContentTitle(if (who != null) "$who 통화 녹음이 저장됐어요" else "통화 녹음이 저장됐어요")
             .setContentText("탭하면 AI 정리 여부를 선택합니다")
             .setStyle(
                 NotificationCompat.BigTextStyle()

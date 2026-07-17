@@ -18,7 +18,8 @@ class RecordingCheckWorker(context: Context, params: WorkerParameters) :
     override fun doWork(): Result {
         val found = findLatestCallRecording(applicationContext, windowSeconds = 10 * 60)
         return if (found != null) {
-            NotifyHelper.showRecordingNotification(applicationContext, found.first, found.second)
+            val call = findLastCall(applicationContext)
+            NotifyHelper.showRecordingNotification(applicationContext, found.first, found.second, call)
             Result.success()
         } else if (runAttemptCount < 2) {
             Result.retry() // WorkManager 기본 백오프(10초~)로 재시도
@@ -26,6 +27,39 @@ class RecordingCheckWorker(context: Context, params: WorkerParameters) :
             Result.success() // 녹음이 꺼져 있었거나 못 찾음 — 조용히 종료
         }
     }
+
+    /** 통화기록에서 방금 통화(최근 10분 내)의 상대 번호·수발신 구분·저장된 이름을 가져온다. */
+    private fun findLastCall(context: Context): CallInfo? {
+        try {
+            context.contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                arrayOf(
+                    android.provider.CallLog.Calls.NUMBER,
+                    android.provider.CallLog.Calls.TYPE,
+                    android.provider.CallLog.Calls.CACHED_NAME,
+                    android.provider.CallLog.Calls.DATE,
+                ),
+                "${android.provider.CallLog.Calls.DATE} >= ?",
+                arrayOf((System.currentTimeMillis() - 10 * 60 * 1000).toString()),
+                "${android.provider.CallLog.Calls.DATE} DESC",
+            )?.use { c ->
+                if (c.moveToFirst()) {
+                    val type = when (c.getInt(1)) {
+                        android.provider.CallLog.Calls.INCOMING_TYPE -> "수신"
+                        android.provider.CallLog.Calls.OUTGOING_TYPE -> "발신"
+                        else -> ""
+                    }
+                    return CallInfo(c.getString(0) ?: "", type, c.getString(2) ?: "")
+                }
+            }
+        } catch (_: SecurityException) {
+            // 통화기록 권한 미허용 — 번호 자동 입력 없이 진행
+        }
+        return null
+    }
+}
+
+data class CallInfo(val number: String, val type: String, val contactName: String)
 
     private fun findLatestCallRecording(context: Context, windowSeconds: Long): Pair<Uri, String>? {
         val sinceEpochSec = System.currentTimeMillis() / 1000 - windowSeconds

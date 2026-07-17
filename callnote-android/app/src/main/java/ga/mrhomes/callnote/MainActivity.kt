@@ -25,6 +25,9 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_PROCESS_RECORDING = "ga.mrhomes.callnote.PROCESS_RECORDING"
         const val EXTRA_AUDIO_URI = "audio_uri"
         const val EXTRA_AUDIO_NAME = "audio_name"
+        const val EXTRA_CALL_PHONE = "call_phone"
+        const val EXTRA_CALL_TYPE = "call_type"
+        const val EXTRA_CALL_NAME = "call_name"
         const val APP_URL = "https://land3lab.github.io/mrhomesga/callnote/"
         private const val MAX_FILE_BYTES = 19L * 1024 * 1024
         private const val JS_CHUNK_CHARS = 256 * 1024
@@ -33,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var pageLoaded = false
     private var pendingAudio: Pair<Uri, String>? = null // (uri, 파일명) — 페이지 로드 후 주입
+    private var pendingCall: CallInfo? = null // 방금 통화의 상대 번호/이름 — 녹음과 함께 주입
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
     private val fileChooserLauncher =
@@ -114,7 +118,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestNeededPermissions() {
-        val wanted = mutableListOf(Manifest.permission.READ_PHONE_STATE)
+        val wanted = mutableListOf(
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG,
+        )
         if (Build.VERSION.SDK_INT >= 33) {
             wanted += Manifest.permission.READ_MEDIA_AUDIO
             wanted += Manifest.permission.POST_NOTIFICATIONS
@@ -135,6 +142,14 @@ class MainActivity : AppCompatActivity() {
                 val uriStr = intent.getStringExtra(EXTRA_AUDIO_URI) ?: return
                 val name = intent.getStringExtra(EXTRA_AUDIO_NAME) ?: "통화녹음.m4a"
                 pendingAudio = Uri.parse(uriStr) to name
+                val phone = intent.getStringExtra(EXTRA_CALL_PHONE) ?: ""
+                pendingCall = if (phone.isNotBlank()) {
+                    CallInfo(
+                        phone,
+                        intent.getStringExtra(EXTRA_CALL_TYPE) ?: "",
+                        intent.getStringExtra(EXTRA_CALL_NAME) ?: "",
+                    )
+                } else null
                 flushPendingAudio()
             }
             // 공유 시트에서 진입
@@ -186,6 +201,17 @@ class MainActivity : AppCompatActivity() {
         val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
         val jsName = JSONObject.quote(name)
         val jsMime = JSONObject.quote(mime)
+
+        // 통화 상대 정보를 먼저 전달 (연락처 칸 자동 입력 + AI 프롬프트 참고용)
+        pendingCall?.let { call ->
+            val p = JSONObject.quote(call.number)
+            val t = JSONObject.quote(call.type)
+            val n = JSONObject.quote(call.contactName)
+            webView.evaluateJavascript(
+                "window.__nativeCallInfo && window.__nativeCallInfo($p, $t, $n)", null
+            )
+        }
+        pendingCall = null
 
         // evaluateJavascript는 호출 순서대로 실행되므로 begin → chunk… → end 순서가 보장된다
         webView.evaluateJavascript(

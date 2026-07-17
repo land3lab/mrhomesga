@@ -203,7 +203,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
       <b>스피커폰 통화 중:</b> [🎙️ 받아쓰기] · <b>아이폰:</b> 통화 요약/메모 텍스트를 아래에 붙여넣기
     </p>
     <label class="f" for="transcript">통화 내용 (받아쓰기 결과 / 직접 입력·붙여넣기)</label>
-    <textarea id="transcript" placeholder="예) 봉천동 두산아파트 102동 집주인인데요, 32평 매매로 내놓으려고요. 8억 5천 생각하고 있어요…"></textarea>
+    <textarea id="transcript" placeholder="통화 내용이 여기에 들어갑니다 — 위 버튼으로 가져오거나 직접 붙여넣으세요"></textarea>
     <div class="interim" id="interim"></div>
     <div class="btnbar">
       <button class="btn primary" id="btn-ai">🤖 AI 자동 정리</button>
@@ -245,6 +245,67 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
     <div class="status" id="settings-status"></div>
     <p class="hint">키는 이 기기 브라우저(localStorage)에만 저장됩니다. [AI 자동 정리]를 누를 때만
     통화 내용/녹음이 Google Gemini API로 전송되고, 그 외에는 모든 데이터가 기기 안에만 있습니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>📊 구글시트 자동 정리 (공유 접수장)</h2>
+    <p class="hint" style="margin-top:0">
+      기록을 저장·수정·삭제할 때마다 구글 드라이브의 스프레드시트에 자동으로 반영됩니다.
+      사무실 직원 모두가 같은 URL을 넣으면 <b>한 시트에 모든 상담이 모입니다.</b>
+      아래 "시트 연결하는 법"을 따라 한 번만 설정하세요.
+    </p>
+    <label class="f" for="sheet-url">Apps Script 웹 앱 URL (…/exec)</label>
+    <input type="text" id="sheet-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+    <div class="btnbar">
+      <button class="btn primary" id="btn-save-settings2">저장</button>
+      <button class="btn" id="btn-sheet-all">📤 기존 기록 전체 보내기</button>
+    </div>
+    <div class="status" id="sheet-status"></div>
+
+    <details class="guide">
+      <summary>🔧 시트 연결하는 법 (한 번만, 5분)</summary>
+      <ol>
+        <li><a href="https://sheets.google.com" target="_blank" rel="noopener">sheets.google.com</a>에서
+          새 스프레드시트 만들기 (이름 예: <b>매물 접수장</b>)</li>
+        <li>시트 메뉴 <b>확장 프로그램 → Apps Script</b> 클릭</li>
+        <li>편집기에 있는 기존 코드를 모두 지우고, 아래 [코드 복사]를 눌러 붙여넣기 → 저장(💾)</li>
+        <li>우상단 <b>배포 → 새 배포</b> → ⚙️에서 유형 <b>웹 앱</b> 선택 →
+          "액세스 권한이 있는 사용자"를 <b>모든 사용자</b>로 → <b>배포</b> → 권한 검토에서 내 계정 허용
+          ("확인되지 않은 앱" 경고가 나오면 <b>고급 → 이동</b> — 본인이 방금 만든 코드라 안전)</li>
+        <li>생성된 <b>웹 앱 URL</b>(https://script.google.com/…/exec)을 복사해 위 칸에 붙여넣고 [저장]</li>
+        <li>기존 기록도 시트에 넣으려면 [📤 기존 기록 전체 보내기] 한 번 클릭</li>
+      </ol>
+      <div class="btnbar" style="margin-top:4px"><button class="btn" id="btn-copy-gscode">📋 코드 복사</button></div>
+      <pre id="gscode" style="overflow-x:auto; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:11.5px; line-height:1.45;">const SHEET_NAME = "통화노트";
+const HEADERS = ["id","통화일시","구분","이름","연락처","고객유형","물건종류","거래유형",
+  "주소/단지","매매가","보증금","월세","면적","층","방/욕실","입주일","희망조건",
+  "특이사항","할일","요약","통화내용","수정일시"];
+
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
+    if (sh.getLastRow() === 0) sh.appendRow(HEADERS);
+    const ids = sh.getRange(1, 1, sh.getLastRow(), 1).getValues().flat();
+    const rowIdx = ids.indexOf(data.record.id) + 1;
+    if (data.action === "delete") {
+      if (rowIdx > 1) sh.deleteRow(rowIdx);
+    } else {
+      const row = HEADERS.map(function (h) { return data.record[h] || ""; });
+      if (rowIdx > 1) sh.getRange(rowIdx, 1, 1, HEADERS.length).setValues([row]);
+      else sh.appendRow(row);
+    }
+    return ContentService.createTextOutput("ok");
+  } finally {
+    lock.releaseLock();
+  }
+}</pre>
+      <p class="hint">시트의 1행(제목)과 id 열은 앱이 기록을 찾아 갱신하는 기준이므로 지우지 마세요.
+      나중에 코드를 바꿨다면 배포 → 배포 관리에서 "새 버전"으로 다시 배포해야 반영됩니다.</p>
+    </details>
   </div>
 
   <div class="card">
@@ -298,6 +359,22 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
           → 전사 텍스트를 복사해서 통화노트에 붙여넣고 [🤖 AI 자동 정리]</li>
         <li>또는 통화 직후 [🎙️ 받아쓰기]를 켜고 내용을 말로 요약해도 됩니다.</li>
       </ol>
+    </details>
+
+    <details class="guide">
+      <summary>👥 여러 명이 함께 쓰기 (사무실 공용)</summary>
+      <ol>
+        <li><b>앱 나눠주기</b>: 직원들에게 이 주소를 보내면 됩니다 —
+          웹: <b>land3lab.github.io/mrhomesga/callnote</b> ·
+          안드로이드 앱: github.com/land3lab/mrhomesga/releases (callnote.apk)</li>
+        <li><b>AI 키</b>: 각자 무료 키를 만들거나, 같은 키를 나눠 써도 됩니다
+          (무료 한도를 함께 소모하니 사용량 많으면 각자 발급 권장)</li>
+        <li><b>공용 접수장</b>: 위 [📊 구글시트 자동 정리]를 설정하고 <b>같은 웹 앱 URL</b>을
+          전 직원의 통화노트에 넣으면, 모두의 상담 기록이 <b>한 스프레드시트</b>에 모입니다.
+          시트는 구글 드라이브에서 직원들과 공유하면 누구나 열람 가능.</li>
+      </ol>
+      <p class="hint">폰 안의 기록 목록은 각자 기기별로 따로 저장됩니다 —
+      "모두가 보는 화면"은 구글시트가 담당한다고 생각하면 됩니다.</p>
     </details>
 
     <details class="guide">
@@ -368,23 +445,24 @@ let settings = loadSettings();
 
 /* ══════════════ 상담 카드 필드 정의 ══════════════ */
 const FIELDS = [
+  // 주의: 폼에는 예시 문구(placeholder)를 넣지 않는다 — 실제 입력값과 헷갈린다는 피드백
   { k: "category", label: "구분", type: "select", options: ["매물접수", "손님문의", "계약진행", "기타"] },
-  { k: "name",     label: "이름", ph: "김철수" },
-  { k: "phone",    label: "연락처", ph: "010-1234-5678" },
+  { k: "name",     label: "이름" },
+  { k: "phone",    label: "연락처" },
   { k: "role",     label: "고객 유형", type: "select", options: ["", "매도인", "임대인", "매수 희망", "임차 희망", "세입자", "기타"] },
   { k: "propertyType", label: "물건 종류", type: "select", options: ["", "아파트", "오피스텔", "빌라/다세대", "단독/다가구", "상가", "사무실", "토지", "기타"] },
   { k: "dealType", label: "거래 유형", type: "select", options: ["", "매매", "전세", "월세", "단기", "기타"] },
-  { k: "address",  label: "주소 / 단지 / 동호수", ph: "봉천동 두산아파트 102동 1204호" },
-  { k: "priceSale",    label: "매매가", ph: "8억 5천", half: 1 },
-  { k: "priceDeposit", label: "보증금(전세금)", ph: "3억", half: 2 },
-  { k: "priceMonthly", label: "월세", ph: "120만원", half: 1 },
-  { k: "area",         label: "면적/평형", ph: "32평(84㎡)", half: 2 },
-  { k: "floor",   label: "층", ph: "12층 / 총 20층", half: 1 },
-  { k: "rooms",   label: "방/욕실", ph: "방3 욕2", half: 2 },
-  { k: "moveIn",  label: "입주 가능일 / 희망 시기", ph: "즉시, 10월 초 등" },
-  { k: "needs",   label: "희망 조건 (손님문의)", type: "textarea", ph: "예산 전세 4억 이내, 초등학교 근처, 3룸 이상…" },
-  { k: "features", label: "특이사항 (한 줄에 하나)", type: "textarea", ph: "올수리 완료\n주차 2대 가능\n반려동물 상의" },
-  { k: "followUps", label: "다음 할 일 (한 줄에 하나)", type: "textarea", ph: "토요일 2시 집 보여주기\n등기부등본 확인 후 회신" },
+  { k: "address",  label: "주소 / 단지 / 동호수" },
+  { k: "priceSale",    label: "매매가", half: 1 },
+  { k: "priceDeposit", label: "보증금(전세금)", half: 2 },
+  { k: "priceMonthly", label: "월세", half: 1 },
+  { k: "area",         label: "면적/평형", half: 2 },
+  { k: "floor",   label: "층", half: 1 },
+  { k: "rooms",   label: "방/욕실", half: 2 },
+  { k: "moveIn",  label: "입주 가능일 / 희망 시기" },
+  { k: "needs",   label: "희망 조건 (손님문의)", type: "textarea" },
+  { k: "features", label: "특이사항 (한 줄에 하나)", type: "textarea" },
+  { k: "followUps", label: "다음 할 일 (한 줄에 하나)", type: "textarea" },
   { k: "summary", label: "한 줄 요약", type: "textarea" },
 ];
 const LIST_KEYS = ["features", "followUps"]; // 배열로 다루는 필드
@@ -521,6 +599,7 @@ function collectForm() {
 function openEdit(id) {
   stopMic();
   editingId = id;
+  callerInfo = null;
   clearPendingAudio();
   hideStatus("ai-status"); hideStatus("save-status");
   const rec = id ? records.find(r => r.id === id) : null;
@@ -621,7 +700,9 @@ const PROMPT = `당신은 한국 부동산 중개사무소의 통화 기록 정�
 규칙:
 - 통화에서 언급되지 않은 항목은 빈 문자열("") 또는 빈 배열로 두세요. 절대 추측해서 채우지 마세요.
 - 금액은 말한 그대로의 한국식 단위를 유지하세요. 예: "8억 5천", "보증금 3억", "월세 120만원"
-- phone(전화번호)은 숫자와 하이픈만 남기세요.
+- phone(연락처): "통화 상대방 전화번호(전화기 기록)"가 참고정보로 주어지면 반드시 그 번호를 먼저 적으세요.
+  통화 중 다른 전화번호가 추가로 언급되면 쉼표로 구분해 함께 적고, 가능하면 괄호로 용도를 표시하세요.
+  예: "010-1111-2222, 010-3333-4444(남편)". 번호는 숫자와 하이픈만.
 - category 판단: 집주인/임대인이 물건을 내놓는 전화 → "매물접수", 집·상가를 구하는 손님 문의 → "손님문의", 진행 중인 계약/잔금/서류 관련 → "계약진행", 그 외 → "기타"
 - features: 수리 상태, 옵션, 주차, 반려동물, 조망, 입주 조건 등 물건 특이사항을 짧은 항목들로.
 - needs: 손님문의인 경우 희망 지역·예산·조건을 한두 문장으로.
@@ -677,6 +758,14 @@ async function callGemini(parts, withTranscript) {
   return JSON.parse(text);
 }
 
+function callerContext() {
+  if (!callerInfo || !callerInfo.phone) return "";
+  let s = `\n\n참고정보 — 통화 상대방 전화번호(전화기 기록): ${callerInfo.phone}`;
+  if (callerInfo.callType) s += ` (${callerInfo.callType})`;
+  if (callerInfo.contactName) s += `, 연락처에 저장된 이름: ${callerInfo.contactName}`;
+  return s;
+}
+
 el("btn-ai").onclick = async () => {
   stopMic();
   const text = el("transcript").value.trim();
@@ -696,13 +785,13 @@ el("btn-ai").onclick = async () => {
       showStatus("ai-status", "info", "⏳ 녹음을 받아쓰고 정리하는 중… (통화 길이에 따라 10초~1분)");
       const b64 = await fileToBase64(pendingAudio);
       result = await callGemini([
-        { text: PROMPT + PROMPT_AUDIO_EXTRA + (text ? `\n\n참고 메모:\n${text}` : "") },
+        { text: PROMPT + PROMPT_AUDIO_EXTRA + callerContext() + (text ? `\n\n참고 메모:\n${text}` : "") },
         { inlineData: { mimeType: guessMime(pendingAudio), data: b64 } },
       ], true);
       if (result.transcript) el("transcript").value = result.transcript;
     } else {
       showStatus("ai-status", "info", "⏳ 통화 내용을 정리하는 중…");
-      result = await callGemini([{ text: PROMPT + "\n\n통화 내용:\n" + text }], false);
+      result = await callGemini([{ text: PROMPT + callerContext() + "\n\n통화 내용:\n" + text }], false);
     }
     const fields = emptyFields();
     FIELDS.forEach(f => {
@@ -713,6 +802,7 @@ el("btn-ai").onclick = async () => {
       else fields[f.k] = String(v);
     });
     fillForm(fields);
+    applyCallerInfo(); // AI가 번호를 못 채웠으면 전화기 기록의 번호로 보완
     el("form-fields").classList.add("flash");
     setTimeout(() => el("form-fields").classList.remove("flash"), 1300);
     showStatus("ai-status", "ok", "✅ 정리 완료! 아래 카드를 확인·수정한 뒤 [💾 저장]을 눌러주세요.");
@@ -735,13 +825,16 @@ el("btn-save").onclick = () => {
     return;
   }
   const now = Date.now();
+  let saved;
   if (editingId) {
-    const r = records.find(x => x.id === editingId);
-    if (r) { r.fields = fields; r.transcript = transcript; r.updatedAt = now; }
+    saved = records.find(x => x.id === editingId);
+    if (saved) { saved.fields = fields; saved.transcript = transcript; saved.updatedAt = now; }
   } else {
-    records.push({ id: "r" + now + Math.random().toString(36).slice(2, 7), createdAt: now, updatedAt: now, fields, transcript });
+    saved = { id: "r" + now + Math.random().toString(36).slice(2, 7), createdAt: now, updatedAt: now, fields, transcript };
+    records.push(saved);
   }
   saveRecords(records);
+  if (saved) sheetSync(saved, "upsert"); // 구글시트 자동 반영 (설정 시)
   renderList();
   show("list");
   tabs.edit.textContent = "＋ 새 기록";
@@ -750,8 +843,10 @@ el("btn-save").onclick = () => {
 el("btn-delete").onclick = () => {
   if (!editingId) return;
   if (!confirm("이 상담 기록을 삭제할까요?")) return;
+  const removed = records.find(r => r.id === editingId);
   records = records.filter(r => r.id !== editingId);
   saveRecords(records);
+  if (removed) sheetSync(removed, "delete"); // 시트에서도 제거 (설정 시)
   renderList();
   show("list");
   tabs.edit.textContent = "＋ 새 기록";
@@ -791,16 +886,97 @@ el("btn-copy").onclick = async () => {
 function initSettings() {
   el("api-key").value = settings.apiKey || "";
   el("model").value = settings.model || "";
+  el("sheet-url").value = settings.sheetUrl || "";
 }
-el("btn-save-settings").onclick = () => {
+function persistSettings() {
   settings.apiKey = el("api-key").value.trim();
   settings.model = el("model").value.trim();
+  settings.sheetUrl = el("sheet-url").value.trim();
   saveSettings(settings);
+}
+el("btn-save-settings").onclick = () => {
+  persistSettings();
   showStatus("settings-status", "ok", "저장되었습니다." + (settings.apiKey ? "" : " (키가 비어 있어 AI 정리는 동작하지 않습니다)"));
+};
+el("btn-save-settings2").onclick = () => {
+  persistSettings();
+  showStatus("sheet-status", settings.sheetUrl ? "ok" : "info",
+    settings.sheetUrl ? "저장되었습니다 — 이제 기록을 저장할 때마다 시트에 자동 반영됩니다."
+                      : "URL이 비어 있어 시트 연동이 꺼져 있습니다.");
+};
+el("btn-copy-gscode").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(el("gscode").textContent);
+    showStatus("sheet-status", "ok", "📋 코드 복사 완료 — Apps Script 편집기에 붙여넣으세요.");
+  } catch {
+    prompt("아래 코드를 길게 눌러 복사하세요", el("gscode").textContent);
+  }
 };
 el("key-toggle").onclick = () => {
   const k = el("api-key");
   k.type = k.type === "password" ? "text" : "password";
+};
+
+/* ══════════════ 구글시트 자동 정리 ══════════════ */
+function fullDate(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// 시트 열 이름(Apps Script의 HEADERS)과 1:1로 맞춘 행 데이터
+function recordToSheetRow(r) {
+  const f = r.fields;
+  return {
+    id: r.id,
+    "통화일시": fullDate(r.createdAt),
+    "구분": f.category || "", "이름": f.name || "", "연락처": f.phone || "",
+    "고객유형": f.role || "", "물건종류": f.propertyType || "", "거래유형": f.dealType || "",
+    "주소/단지": f.address || "", "매매가": f.priceSale || "", "보증금": f.priceDeposit || "",
+    "월세": f.priceMonthly || "", "면적": f.area || "", "층": f.floor || "",
+    "방/욕실": f.rooms || "", "입주일": f.moveIn || "", "희망조건": f.needs || "",
+    "특이사항": (f.features || []).join(" / "), "할일": (f.followUps || []).join(" / "),
+    "요약": f.summary || "", "통화내용": r.transcript || "",
+    "수정일시": fullDate(r.updatedAt || r.createdAt),
+  };
+}
+// Apps Script 웹 앱은 CORS 응답 헤더를 주지 않으므로 no-cors로 보낸다
+// (전송은 되지만 응답 내용은 읽을 수 없음 — 실패는 네트워크 오류일 때만 감지됨)
+async function sheetSync(record, action) {
+  const url = (settings.sheetUrl || "").trim();
+  if (!url) return null;
+  try {
+    await fetch(url, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action, record: recordToSheetRow(record) }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+el("btn-sheet-all").onclick = async () => {
+  persistSettings();
+  if (!settings.sheetUrl) {
+    showStatus("sheet-status", "err", "먼저 위에 웹 앱 URL을 넣고 저장해 주세요.");
+    return;
+  }
+  if (!records.length) {
+    showStatus("sheet-status", "info", "보낼 기록이 없습니다.");
+    return;
+  }
+  const btn = el("btn-sheet-all");
+  btn.disabled = true;
+  let sent = 0, failed = 0;
+  for (const r of records) {
+    showStatus("sheet-status", "info", `⏳ 전송 중… ${sent + failed + 1}/${records.length}`);
+    (await sheetSync(r, "upsert")) ? sent++ : failed++;
+  }
+  btn.disabled = false;
+  showStatus("sheet-status", failed ? "err" : "ok",
+    failed ? `전송 ${sent}건, 실패 ${failed}건 — 인터넷 연결을 확인하고 다시 시도해 주세요.`
+           : `✅ ${sent}건을 시트로 보냈습니다. 스프레드시트에서 확인해 보세요.`);
 };
 
 /* ══════════════ 백업 ══════════════ */
@@ -885,8 +1061,20 @@ el("share-no").onclick = () => {
 
 /* ══════════════ 네이티브 안드로이드 앱 브릿지 ══════════════
    통화노트 안드로이드 앱(callnote-android)이 통화 종료 후 녹음 파일을
-   base64 조각으로 주입한다. begin → chunk… → end 순서로 호출된다. */
+   base64 조각으로 주입한다. __nativeCallInfo(선택) → begin → chunk… → end 순서. */
 let nativeShare = null;
+let callerInfo = null; // { phone, callType, contactName } — 통화기록에서 가져온 상대방 정보
+
+function applyCallerInfo() {
+  if (!callerInfo) return;
+  const phoneEl = el("fld-phone"), nameEl = el("fld-name");
+  if (callerInfo.phone && !phoneEl.value.trim()) phoneEl.value = callerInfo.phone;
+  if (callerInfo.contactName && !nameEl.value.trim()) nameEl.value = callerInfo.contactName;
+}
+
+window.__nativeCallInfo = (phone, callType, contactName) => {
+  callerInfo = { phone: phone || "", callType: callType || "", contactName: contactName || "" };
+};
 window.__nativeShareBegin = (name, mime) => { nativeShare = { name, mime, parts: [] }; };
 window.__nativeShareChunk = (b64) => { if (nativeShare) nativeShare.parts.push(b64); };
 window.__nativeShareEnd = () => {
@@ -895,7 +1083,10 @@ window.__nativeShareEnd = () => {
     const bin = atob(nativeShare.parts.join(""));
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const keepCaller = callerInfo; // openEdit이 초기화하므로 보관
     openEdit(null);
+    callerInfo = keepCaller;
+    applyCallerInfo(); // 걸려온/건 번호를 연락처 칸에 미리 채움
     setPendingAudio(new File([bytes], nativeShare.name || "통화녹음.m4a", { type: nativeShare.mime || "audio/mp4" }));
     if (pendingAudio) { // 크기 초과 등으로 거부되지 않았을 때만 팝업
       el("share-modal-desc").textContent = `"${pendingAudio.name}" 녹음을 AI가 받아쓰고 상담 카드로 정리할까요?`;
