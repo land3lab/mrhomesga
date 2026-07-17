@@ -184,6 +184,11 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
     <button data-cat="계약진행">계약진행</button>
     <button data-cat="기타">기타</button>
   </div>
+  <div class="btnbar" style="margin:0 0 10px">
+    <button class="btn" id="btn-share-mode">📤 매물 공유하기</button>
+    <button class="btn hidden" id="btn-share-all">전체 선택</button>
+    <button class="btn primary hidden" id="btn-share-send">보내기</button>
+  </div>
   <div id="rec-list"></div>
 </section>
 
@@ -219,6 +224,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
   <div class="btnbar">
     <button class="btn primary" id="btn-save">💾 저장</button>
     <button class="btn" id="btn-copy">📋 복사</button>
+    <button class="btn" id="btn-share-one">📤 공유</button>
     <button class="btn danger hidden" id="btn-delete">🗑 삭제</button>
   </div>
   <div class="status" id="save-status"></div>
@@ -248,20 +254,24 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
   </div>
 
   <div class="card">
-    <h2>📊 구글시트 자동 정리 (공유 접수장)</h2>
+    <h2>📊 내 매물장 시트 (개인용)</h2>
     <p class="hint" style="margin-top:0">
-      기록을 저장·수정·삭제할 때마다 구글 드라이브의 스프레드시트에 자동으로 반영됩니다.
-      사무실 직원 모두가 같은 URL을 넣으면 <b>한 시트에 모든 상담이 모입니다.</b>
+      <b>내 기록은 내 것</b> — 기록을 저장·수정·삭제할 때마다 <b>내 구글 드라이브의 스프레드시트</b>에
+      자동 백업됩니다. 이 시트는 동료가 매물을 보내주는 <b>수신함</b> 역할도 해서,
+      동료가 공유한 매물이 앱을 열 때 자동으로 내 매물장에 들어옵니다.
       아래 "시트 연결하는 법"을 따라 한 번만 설정하세요.
     </p>
-    <label class="f" for="sheet-url">Apps Script 웹 앱 URL (…/exec)</label>
+    <label class="f" for="sheet-url">내 웹 앱 URL (…/exec)</label>
     <input type="text" id="sheet-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
     <div class="btnbar">
       <button class="btn primary" id="btn-save-settings2">저장</button>
       <button class="btn" id="btn-sheet-test">🔍 연결 테스트</button>
+      <button class="btn" id="btn-sheet-pull">🔄 시트에서 받기</button>
       <button class="btn" id="btn-sheet-all">📤 전체 다시 보내기</button>
     </div>
     <div class="status" id="sheet-status"></div>
+    <p class="hint">동료에게 매물을 받으려면 이 URL을 동료에게 알려줘서 동료의 [👥 공유 대상]에
+    등록하게 하세요. (URL을 아는 사람만 보낼 수 있습니다)</p>
 
     <details class="guide">
       <summary>🔧 시트 연결하는 법 (한 번만, 5분)</summary>
@@ -312,9 +322,25 @@ function getSpreadsheet() {
   return created;
 }
 
-// 연결 테스트용 — 브라우저/앱에서 URL을 열면 상태와 시트 주소를 알려준다
-function doGet() {
+// 연결 테스트 + 수신함 읽기 — ?action=list 로 호출하면 최근 기록을 돌려준다
+// (앱이 이걸로 "동료가 보내준 매물"을 자동으로 받아온다)
+function doGet(e) {
   const ss = getSpreadsheet();
+  if (e && e.parameter && e.parameter.action === "list") {
+    const sh = ss.getSheetByName(SHEET_NAME);
+    const rows = [];
+    if (sh && sh.getLastRow() > 1) {
+      const values = sh.getRange(1, 1, sh.getLastRow(), HEADERS.length).getValues();
+      const start = Math.max(1, values.length - 500); // 최근 500건까지
+      for (let i = start; i < values.length; i++) {
+        const o = {};
+        HEADERS.forEach(function (h, j) { o[h] = values[i][j]; });
+        rows.push(o);
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, rows: rows }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   return ContentService.createTextOutput(
     JSON.stringify({ ok: true, sheet: ss.getUrl() })
   ).setMimeType(ContentService.MimeType.JSON);
@@ -346,6 +372,24 @@ function doPost(e) {
       <p class="hint">시트의 1행(제목)과 id 열은 앱이 기록을 찾아 갱신하는 기준이므로 지우지 마세요.
       나중에 코드를 바꿨다면 배포 → 배포 관리에서 "새 버전"으로 다시 배포해야 반영됩니다.</p>
     </details>
+  </div>
+
+  <div class="card">
+    <h2>👥 공유 대상 (직원 주소록)</h2>
+    <p class="hint" style="margin-top:0">
+      동료의 <b>웹 앱 URL</b>(동료가 자기 ⚙️ 설정에서 만든 것)을 등록해 두면,
+      목록에서 매물을 골라 [📤 공유]로 바로 보내줄 수 있습니다.
+      같은 그룹 이름을 붙이면 그룹 단위로 한 번에 선택돼요 (예: "관악센터").
+    </p>
+    <div class="row">
+      <div><label class="f" for="ct-name">이름</label><input type="text" id="ct-name" autocomplete="off"></div>
+      <div><label class="f" for="ct-group">그룹 (선택)</label><input type="text" id="ct-group" autocomplete="off"></div>
+    </div>
+    <label class="f" for="ct-url">동료의 웹 앱 URL (…/exec)</label>
+    <input type="text" id="ct-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+    <div class="btnbar"><button class="btn primary" id="btn-ct-add">＋ 추가</button></div>
+    <div id="ct-list" style="margin-top:8px"></div>
+    <div class="status" id="ct-status"></div>
   </div>
 
   <div class="card">
@@ -402,19 +446,23 @@ function doPost(e) {
     </details>
 
     <details class="guide">
-      <summary>👥 여러 명이 함께 쓰기 (사무실 공용)</summary>
+      <summary>👥 직원들과 함께 쓰기 — 각자 매물장 + 골라서 공유</summary>
+      <p class="hint" style="margin-top:4px"><b>기본 원칙: 매물장은 각자 개인 것입니다.</b>
+      각자 자기 폰에 기록하고 자기 시트에 백업하며, 공유하고 싶은 매물만 골라서 보냅니다.</p>
       <ol>
-        <li><b>앱 나눠주기</b>: 직원들에게 이 주소를 보내면 됩니다 —
-          웹: <b>land3lab.github.io/mrhomesga/callnote</b> ·
-          안드로이드 앱: github.com/land3lab/mrhomesga/releases (callnote.apk)</li>
-        <li><b>AI 키</b>: 각자 무료 키를 만들거나, 같은 키를 나눠 써도 됩니다
-          (무료 한도를 함께 소모하니 사용량 많으면 각자 발급 권장)</li>
-        <li><b>공용 접수장</b>: 위 [📊 구글시트 자동 정리]를 설정하고 <b>같은 웹 앱 URL</b>을
-          전 직원의 통화노트에 넣으면, 모두의 상담 기록이 <b>한 스프레드시트</b>에 모입니다.
-          시트는 구글 드라이브에서 직원들과 공유하면 누구나 열람 가능.</li>
+        <li><b>직원 각자 설치·설정</b>: 앱 설치(웹 land3lab.github.io/mrhomesga/callnote 또는
+          APK) → 각자 AI 키 발급 → 각자 [📊 내 매물장 시트] 연결 (각자 자기 구글 계정으로)</li>
+        <li><b>서로 주소록 등록</b>: 각자 ⚙️ 설정의 <b>내 웹 앱 URL</b>을 동료에게 알려주고,
+          서로 [👥 공유 대상]에 이름·그룹과 함께 추가 (예: 그룹 "관악센터")</li>
+        <li><b>보내기</b>: 목록에서 <b>[📤 매물 공유하기]</b> → 매물을 터치해 선택
+          (1건, 여러 건, [전체 선택] 모두 가능) → [보내기] → 직원 개인 선택 또는
+          <b>그룹 버튼으로 한 번에 선택</b> → 전송.
+          기록 열람 중에는 [📤 공유] 버튼으로 그 매물만 바로 보낼 수 있어요.</li>
+        <li><b>받기</b>: 받는 직원은 아무것도 안 해도 됩니다 — 앱을 열면 자기 시트(수신함)에서
+          자동으로 받아와 매물장에 추가됩니다. 바로 확인하려면 [🔄 시트에서 받기].</li>
       </ol>
-      <p class="hint">폰 안의 기록 목록은 각자 기기별로 따로 저장됩니다 —
-      "모두가 보는 화면"은 구글시트가 담당한다고 생각하면 됩니다.</p>
+      <p class="hint">보낸 매물은 받는 사람의 매물장에 <b>복사</b>됩니다 — 이후 각자 수정해도
+      서로에게 영향을 주지 않습니다. 다시 보내면 최신 내용으로 갱신돼요.</p>
     </details>
 
     <details class="guide">
@@ -449,6 +497,21 @@ function doPost(e) {
 </section>
 
 </main>
+
+<!-- 매물 보내기(직원 선택) 모달 -->
+<div id="send-modal" class="modal hidden">
+  <div class="modal-card">
+    <h2>📤 매물 공유</h2>
+    <p id="send-desc"></p>
+    <div class="chips" id="send-groups"></div>
+    <div id="send-contacts" style="max-height:38vh; overflow-y:auto; margin:6px 0"></div>
+    <div class="btnbar">
+      <button class="btn primary" id="send-go">보내기</button>
+      <button class="btn" id="send-cancel">취소</button>
+    </div>
+    <div class="status" id="send-status"></div>
+  </div>
+</div>
 
 <!-- 공유 수신 시 "정리할까요?" 팝업 -->
 <div id="share-modal" class="modal hidden">
@@ -552,13 +615,17 @@ function recSearchText(r) {
   return Object.values(r.fields).flat().join(" ") + " " + (r.transcript || "");
 }
 
-function renderList() {
+function visibleRecords() {
   const q = el("search").value.trim().toLowerCase();
-  const box = el("rec-list");
-  const shown = records
+  return records
     .filter(r => !filterCat || r.fields.category === filterCat)
     .filter(r => !q || recSearchText(r).toLowerCase().includes(q))
     .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function renderList() {
+  const box = el("rec-list");
+  const shown = visibleRecords();
 
   if (!shown.length) {
     box.innerHTML = `<div class="empty">${records.length ? "검색 결과가 없습니다." :
@@ -575,6 +642,7 @@ function renderList() {
     const todo = (f.followUps || []).filter(Boolean);
     return `<div class="card rec-item" data-id="${r.id}">
       <div class="top">
+        ${shareMode ? `<input type="checkbox" class="selbox" ${selectedIds.has(r.id) ? "checked" : ""} style="width:19px; height:19px; pointer-events:none; accent-color:var(--accent)">` : ""}
         <span class="badge b-${esc(f.category)}">${esc(f.category)}</span>
         <span class="who">${esc(f.name || "이름 미상")}</span>
         ${f.phone ? `<a class="tel" href="tel:${esc(f.phone.replace(/[^0-9+]/g, ""))}" onclick="event.stopPropagation()">${esc(f.phone)}</a>` : ""}
@@ -586,7 +654,17 @@ function renderList() {
     </div>`;
   }).join("");
   box.querySelectorAll(".rec-item").forEach(item => {
-    item.onclick = () => openEdit(item.dataset.id);
+    item.onclick = () => {
+      if (shareMode) { // 공유 모드에서는 카드 터치 = 선택/해제
+        const id = item.dataset.id;
+        selectedIds.has(id) ? selectedIds.delete(id) : selectedIds.add(id);
+        const ck = item.querySelector(".selbox");
+        if (ck) ck.checked = selectedIds.has(id);
+        updateShareSendLabel();
+      } else {
+        openEdit(item.dataset.id);
+      }
+    };
   });
 }
 
@@ -931,6 +1009,7 @@ function initSettings() {
   el("api-key").value = settings.apiKey || "";
   el("model").value = settings.model || "";
   el("sheet-url").value = settings.sheetUrl || "";
+  renderContacts();
 }
 function persistSettings() {
   settings.apiKey = el("api-key").value.trim();
@@ -991,21 +1070,248 @@ function recordToSheetRow(r) {
 }
 // Apps Script는 text/plain POST(단순 요청)에 CORS 허용 응답을 주므로 결과를 읽어 확인한다.
 // 혹시 읽기가 차단되는 환경이면 no-cors로 한 번 더 보낸다 (id 기준 upsert라 중복 전송 무해).
+async function postSheet(url, payload) {
+  const opts = {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  };
+  try {
+    const res = await fetch(url, opts);
+    return res.ok && (await res.text()).includes('"ok"');
+  } catch {
+    try { await fetch(url, { ...opts, mode: "no-cors" }); return true; } catch { return false; }
+  }
+}
 async function sheetSync(record, action) {
   const url = (settings.sheetUrl || "").trim();
   if (!url) return null;
-  const body = JSON.stringify({ action, record: recordToSheetRow(record) });
-  const opts = { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body };
-  let ok = false;
-  try {
-    const res = await fetch(url, opts);
-    ok = res.ok && (await res.text()).includes('"ok"');
-  } catch {
-    try { await fetch(url, { ...opts, mode: "no-cors" }); ok = true; } catch { ok = false; }
-  }
+  const ok = await postSheet(url, { action, record: recordToSheetRow(record) });
   if (ok && action === "upsert") { record.syncedAt = Date.now(); saveRecords(records); }
   return ok;
 }
+
+// 시트 행 → 앱 기록 (동료가 내 시트로 보내준 매물을 앱으로 가져올 때)
+function sheetRowToRecord(row) {
+  const g = k => (row[k] == null ? "" : String(row[k]).trim());
+  const created = new Date(row["통화일시"]).getTime() || Date.now();
+  const updated = new Date(row["수정일시"]).getTime() || created;
+  const cat = g("구분");
+  return {
+    id: g("id"),
+    createdAt: created,
+    updatedAt: updated,
+    syncedAt: Date.now(), // 이미 시트에 있는 기록이므로 다시 올릴 필요 없음
+    transcript: g("통화내용"),
+    fields: {
+      category: ["매물접수", "손님문의", "계약진행", "기타"].includes(cat) ? cat : "기타",
+      name: g("이름"), phone: g("연락처"), role: g("고객유형"),
+      propertyType: g("물건종류"), dealType: g("거래유형"), address: g("주소/단지"),
+      priceSale: g("매매가"), priceDeposit: g("보증금"), priceMonthly: g("월세"),
+      area: g("면적"), floor: g("층"), rooms: g("방/욕실"), moveIn: g("입주일"),
+      needs: g("희망조건"),
+      features: g("특이사항") ? g("특이사항").split(" / ").filter(Boolean) : [],
+      followUps: g("할일") ? g("할일").split(" / ").filter(Boolean) : [],
+      summary: g("요약"),
+    },
+  };
+}
+
+// 내 시트(수신함)에서 새 기록을 받아온다 — 동료가 보내준 매물이 여기로 들어온다
+async function sheetPull(showResult) {
+  const url = (settings.sheetUrl || "").trim();
+  if (!url) return 0;
+  try {
+    const res = await fetch(url + (url.includes("?") ? "&" : "?") + "action=list");
+    const j = await res.json();
+    if (!j.ok || !Array.isArray(j.rows)) throw new Error("bad response");
+    let added = 0, updated = 0;
+    const deletedIds = pendingDeletes();
+    for (const row of j.rows) {
+      const inc = sheetRowToRecord(row);
+      if (!inc.id || deletedIds.includes(inc.id)) continue; // 방금 지운 기록은 되살리지 않음
+      const mine = records.find(r => r.id === inc.id);
+      if (!mine) { records.push(inc); added++; }
+      else if (inc.updatedAt > (mine.updatedAt || 0) + 60000) { Object.assign(mine, inc); updated++; }
+    }
+    if (added || updated) { saveRecords(records); renderList(); }
+    if (showResult) {
+      showStatus("sheet-status", "ok",
+        added || updated ? `🔄 받아오기 완료 — 새 매물 ${added}건, 갱신 ${updated}건이 목록에 추가됐습니다.`
+                         : "🔄 확인 완료 — 새로 받은 매물이 없습니다.");
+    }
+    return added + updated;
+  } catch {
+    if (showResult) {
+      showStatus("sheet-status", "err",
+        "받아오기 실패 — [🔍 연결 테스트]로 연결을 확인해 주세요. 스크립트 코드가 최신 버전([📋 코드 복사]의 코드)이어야 합니다.");
+    }
+    return 0;
+  }
+}
+el("btn-sheet-pull").onclick = async () => {
+  persistSettings();
+  if (!settings.sheetUrl) {
+    showStatus("sheet-status", "err", "먼저 위에 웹 앱 URL을 넣고 [저장]해 주세요.");
+    return;
+  }
+  showStatus("sheet-status", "info", "⏳ 시트에서 받아오는 중…");
+  await sheetPull(true);
+};
+
+/* ══════════════ 공유 대상(직원 주소록) ══════════════ */
+function contacts() { return Array.isArray(settings.contacts) ? settings.contacts : []; }
+
+function renderContacts() {
+  const list = contacts();
+  el("ct-list").innerHTML = list.length ? list.map((c, i) => `
+    <div style="display:flex; align-items:center; gap:8px; padding:7px 0; border-top:1px solid var(--line); font-size:14px">
+      <b>${esc(c.name)}</b>
+      ${c.group ? `<span class="badge b-기타">${esc(c.group)}</span>` : ""}
+      <span style="color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1">${esc(c.url)}</span>
+      <button class="btn" data-del="${i}" style="padding:4px 10px; flex:none">✕</button>
+    </div>`).join("") : `<p class="hint">아직 등록된 직원이 없습니다.</p>`;
+  el("ct-list").querySelectorAll("button[data-del]").forEach(b => {
+    b.onclick = () => {
+      const i = +b.dataset.del;
+      if (!confirm(`'${contacts()[i].name}' 님을 목록에서 삭제할까요?`)) return;
+      settings.contacts.splice(i, 1);
+      saveSettings(settings);
+      renderContacts();
+    };
+  });
+}
+
+el("btn-ct-add").onclick = () => {
+  const name = el("ct-name").value.trim();
+  const group = el("ct-group").value.trim();
+  const url = el("ct-url").value.trim();
+  if (!name || !url) {
+    showStatus("ct-status", "err", "이름과 URL을 입력해 주세요.");
+    return;
+  }
+  if (!/\/exec\b/.test(url)) {
+    showStatus("ct-status", "err", "URL이 /exec 로 끝나야 합니다 — 동료의 ⚙️ 설정 화면에 있는 '내 웹 앱 URL'을 받아 적어주세요.");
+    return;
+  }
+  if (!Array.isArray(settings.contacts)) settings.contacts = [];
+  settings.contacts.push({ name, group, url });
+  saveSettings(settings);
+  el("ct-name").value = el("ct-group").value = el("ct-url").value = "";
+  renderContacts();
+  showStatus("ct-status", "ok", `✅ ${name} 님을 추가했습니다. 이제 목록에서 매물을 골라 보낼 수 있어요.`);
+};
+
+/* ══════════════ 매물 공유 (보내기 모달) ══════════════ */
+let sendRecords = [];
+
+function openSendModal(recs) {
+  if (!recs.length) return;
+  if (!contacts().length) {
+    alert("공유 대상이 없습니다.\n⚙️ 설정·가이드 → 👥 공유 대상(직원 주소록)에서 직원을 먼저 추가해 주세요.");
+    show("settings");
+    return;
+  }
+  sendRecords = recs;
+  el("send-desc").textContent = recs.length === 1
+    ? `"${recs[0].fields.name || recs[0].fields.address || "기록 1건"}" 매물을 누구에게 보낼까요?`
+    : `매물 ${recs.length}건을 누구에게 보낼까요?`;
+  const groups = [...new Set(contacts().map(c => c.group).filter(Boolean))];
+  el("send-groups").innerHTML = groups.map(g => `<button data-g="${esc(g)}">👥 ${esc(g)} 전체</button>`).join("");
+  el("send-contacts").innerHTML = contacts().map((c, i) => `
+    <label style="display:flex; align-items:center; gap:10px; padding:9px 2px; border-top:1px solid var(--line); font-size:14.5px; cursor:pointer">
+      <input type="checkbox" class="send-ck" data-i="${i}" style="width:19px; height:19px">
+      <b>${esc(c.name)}</b>${c.group ? `<span class="hint" style="margin:0">${esc(c.group)}</span>` : ""}
+    </label>`).join("");
+  el("send-groups").querySelectorAll("button").forEach(b => {
+    b.onclick = () => {
+      el("send-contacts").querySelectorAll(".send-ck").forEach(ck => {
+        if ((contacts()[+ck.dataset.i].group || "") === b.dataset.g) ck.checked = true;
+      });
+    };
+  });
+  hideStatus("send-status");
+  el("send-go").disabled = false;
+  el("send-modal").classList.remove("hidden");
+}
+
+el("send-cancel").onclick = () => el("send-modal").classList.add("hidden");
+
+el("send-go").onclick = async () => {
+  const picked = [...el("send-contacts").querySelectorAll(".send-ck")]
+    .filter(ck => ck.checked)
+    .map(ck => contacts()[+ck.dataset.i]);
+  if (!picked.length) {
+    showStatus("send-status", "err", "보낼 직원을 선택해 주세요 (그룹 버튼으로 한 번에 선택 가능).");
+    return;
+  }
+  el("send-go").disabled = true;
+  let done = 0, fail = 0;
+  const total = picked.length * sendRecords.length;
+  for (const c of picked) {
+    for (const r of sendRecords) {
+      showStatus("send-status", "info", `⏳ ${c.name} 님에게 보내는 중… (${done + fail + 1}/${total})`);
+      (await postSheet(c.url, { action: "upsert", record: recordToSheetRow(r) })) ? done++ : fail++;
+    }
+  }
+  el("send-go").disabled = false;
+  if (fail) {
+    showStatus("send-status", "err", `전송 ${done}건, 실패 ${fail}건 — 상대방 URL과 인터넷 연결을 확인해 주세요.`);
+  } else {
+    showStatus("send-status", "ok",
+      `✅ ${picked.map(c => c.name).join(", ")} 님에게 매물 ${sendRecords.length}건을 보냈습니다. 상대방이 앱을 열면 자동으로 매물장에 들어갑니다.`);
+    setTimeout(() => { el("send-modal").classList.add("hidden"); exitShareMode(); }, 1800);
+  }
+};
+
+/* ══════════════ 목록 공유 모드 (매물 선택) ══════════════ */
+let shareMode = false;
+const selectedIds = new Set();
+
+function exitShareMode() {
+  shareMode = false;
+  selectedIds.clear();
+  el("btn-share-mode").textContent = "📤 매물 공유하기";
+  el("btn-share-all").classList.add("hidden");
+  el("btn-share-send").classList.add("hidden");
+  renderList();
+}
+function updateShareSendLabel() {
+  el("btn-share-send").textContent = `보내기 (${selectedIds.size})`;
+}
+el("btn-share-mode").onclick = () => {
+  if (shareMode) { exitShareMode(); return; }
+  if (!records.length) { alert("공유할 기록이 없습니다."); return; }
+  shareMode = true;
+  el("btn-share-mode").textContent = "✕ 선택 취소";
+  el("btn-share-all").classList.remove("hidden");
+  el("btn-share-send").classList.remove("hidden");
+  updateShareSendLabel();
+  renderList();
+};
+el("btn-share-all").onclick = () => {
+  // 현재 검색/필터로 보이는 기록 전부 선택 (다시 누르면 전체 해제)
+  const visible = visibleRecords().map(r => r.id);
+  const allSelected = visible.length && visible.every(id => selectedIds.has(id));
+  visible.forEach(id => allSelected ? selectedIds.delete(id) : selectedIds.add(id));
+  updateShareSendLabel();
+  renderList();
+};
+el("btn-share-send").onclick = () => {
+  const recs = records.filter(r => selectedIds.has(r.id));
+  if (!recs.length) { alert("보낼 매물을 먼저 선택해 주세요 (카드를 눌러 체크)."); return; }
+  openSendModal(recs);
+};
+el("btn-share-one").onclick = () => {
+  const base = editingId ? records.find(r => r.id === editingId) : null;
+  openSendModal([{
+    id: base ? base.id : "r" + Date.now() + Math.random().toString(36).slice(2, 7),
+    createdAt: base ? base.createdAt : Date.now(),
+    updatedAt: Date.now(),
+    fields: collectForm(),
+    transcript: el("transcript").value.trim(),
+  }]);
+};
 
 function pendingDeletes() {
   try { return JSON.parse(localStorage.getItem(LS_DELETES)) || []; } catch { return []; }
@@ -1220,7 +1526,8 @@ fillForm(emptyFields());
 initSettings();
 renderList();
 checkShared();
-flushSheetQueue(); // 앱을 열 때 미전송분(오프라인 중 저장한 기록 등) 자동 업로드
+// 앱을 열 때: 미전송분 자동 업로드 → 동료가 보내준 매물 자동 수신
+flushSheetQueue().then(() => sheetPull(false));
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});
