@@ -258,6 +258,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
     <input type="text" id="sheet-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
     <div class="btnbar">
       <button class="btn primary" id="btn-save-settings2">저장</button>
+      <button class="btn" id="btn-sheet-test">🔍 연결 테스트</button>
       <button class="btn" id="btn-sheet-all">📤 전체 다시 보내기</button>
     </div>
     <div class="status" id="sheet-status"></div>
@@ -281,6 +282,8 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
         <li>생성된 <b>웹 앱 URL</b>(https://script.google.com/…/exec) 복사 → 위 칸에 붙여넣고 [저장]
           — 저장하는 순간 <b>기존 기록까지 전부 자동 전송</b>되고,
           <b>구글 드라이브에 "통화노트 매물 접수장" 시트가 자동으로 생깁니다</b></li>
+        <li><b>[🔍 연결 테스트]</b>를 눌러 확인 — "✅ 연결 성공"과 함께 시트를 여는 링크가 나오면 완료.
+          실패 메시지가 나오면 그 안내대로 고치면 됩니다</li>
       </ol>
       <p class="hint">이후에는 아무것도 누를 필요 없습니다 — 기록을 저장·수정·삭제할 때마다 자동 반영되고,
       인터넷이 끊긴 상태에서 저장한 기록도 다음에 앱을 열거나 인터넷이 연결되면 자동으로 올라갑니다.
@@ -309,6 +312,14 @@ function getSpreadsheet() {
   return created;
 }
 
+// 연결 테스트용 — 브라우저/앱에서 URL을 열면 상태와 시트 주소를 알려준다
+function doGet() {
+  const ss = getSpreadsheet();
+  return ContentService.createTextOutput(
+    JSON.stringify({ ok: true, sheet: ss.getUrl() })
+  ).setMimeType(ContentService.MimeType.JSON);
+}
+
 function doPost(e) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -326,7 +337,8 @@ function doPost(e) {
       if (rowIdx > 1) sh.getRange(rowIdx, 1, 1, HEADERS.length).setValues([row]);
       else sh.appendRow(row);
     }
-    return ContentService.createTextOutput("ok");
+    return ContentService.createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
   } finally {
     lock.releaseLock();
   }
@@ -977,23 +989,22 @@ function recordToSheetRow(r) {
     "수정일시": fullDate(r.updatedAt || r.createdAt),
   };
 }
-// Apps Script 웹 앱은 CORS 응답 헤더를 주지 않으므로 no-cors로 보낸다
-// (전송은 되지만 응답 내용은 읽을 수 없음 — 실패는 네트워크 오류일 때만 감지됨)
+// Apps Script는 text/plain POST(단순 요청)에 CORS 허용 응답을 주므로 결과를 읽어 확인한다.
+// 혹시 읽기가 차단되는 환경이면 no-cors로 한 번 더 보낸다 (id 기준 upsert라 중복 전송 무해).
 async function sheetSync(record, action) {
   const url = (settings.sheetUrl || "").trim();
   if (!url) return null;
+  const body = JSON.stringify({ action, record: recordToSheetRow(record) });
+  const opts = { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body };
+  let ok = false;
   try {
-    await fetch(url, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, record: recordToSheetRow(record) }),
-    });
-    if (action === "upsert") { record.syncedAt = Date.now(); saveRecords(records); }
-    return true;
+    const res = await fetch(url, opts);
+    ok = res.ok && (await res.text()).includes('"ok"');
   } catch {
-    return false;
+    try { await fetch(url, { ...opts, mode: "no-cors" }); ok = true; } catch { ok = false; }
   }
+  if (ok && action === "upsert") { record.syncedAt = Date.now(); saveRecords(records); }
+  return ok;
 }
 
 function pendingDeletes() {
@@ -1028,6 +1039,39 @@ async function flushSheetQueue() {
   return sent;
 }
 window.addEventListener("online", () => { flushSheetQueue(); });
+// 연결 테스트: doGet을 호출해 URL·배포 설정이 맞는지, 시트가 어디 생겼는지 확인
+el("btn-sheet-test").onclick = async () => {
+  persistSettings();
+  const url = settings.sheetUrl;
+  if (!url) {
+    showStatus("sheet-status", "err", "먼저 위에 웹 앱 URL(…/exec)을 붙여넣고 [저장]해 주세요.");
+    return;
+  }
+  if (!/\/exec\b/.test(url)) {
+    showStatus("sheet-status", "err", "URL이 /exec 로 끝나야 합니다 (/dev 주소는 동작하지 않아요). 배포 화면의 '웹 앱' URL을 다시 복사해 주세요.");
+    return;
+  }
+  showStatus("sheet-status", "info", "⏳ 연결 확인 중…");
+  try {
+    const res = await fetch(url);
+    const text = await res.text();
+    let j = null;
+    try { j = JSON.parse(text); } catch {}
+    if (j && j.ok) {
+      const n = el("sheet-status");
+      n.className = "status show ok";
+      n.innerHTML = `✅ 연결 성공! 기록이 저장될 시트: <a href="${esc(j.sheet)}" target="_blank" rel="noopener" style="color:inherit; font-weight:700">여기를 눌러 열기</a>`;
+      flushSheetQueue(); // 연결이 확인됐으니 밀린 기록도 바로 올린다
+    } else {
+      showStatus("sheet-status", "err",
+        "연결은 되지만 응답이 예상과 다릅니다. Apps Script 편집기에서 ① 코드를 최신([📋 코드 복사]의 코드)으로 바꾸고 ② 배포 → 배포 관리 → ✏️ 수정 → 버전: '새 버전' → 배포를 다시 해주세요.");
+    }
+  } catch {
+    showStatus("sheet-status", "err",
+      "연결 실패 — ① URL이 …/exec 인지 ② 배포 시 '액세스 권한: 모든 사용자'로 했는지 ③ 인터넷 연결을 확인해 주세요. 배포 관리에서 액세스 권한을 바꾼 뒤에는 '새 버전'으로 다시 배포해야 합니다.");
+  }
+};
+
 // 강제 재전송: 이미 보낸 것 포함 전체를 다시 올린다 (시트를 실수로 지웠을 때 등)
 el("btn-sheet-all").onclick = async () => {
   persistSettings();
