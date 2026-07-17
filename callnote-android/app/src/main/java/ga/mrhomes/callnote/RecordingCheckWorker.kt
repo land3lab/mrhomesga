@@ -57,9 +57,6 @@ class RecordingCheckWorker(context: Context, params: WorkerParameters) :
         }
         return null
     }
-}
-
-data class CallInfo(val number: String, val type: String, val contactName: String)
 
     private fun findLatestCallRecording(context: Context, windowSeconds: Long): Pair<Uri, String>? {
         val sinceEpochSec = System.currentTimeMillis() / 1000 - windowSeconds
@@ -111,3 +108,5 @@ data class CallInfo(val number: String, val type: String, val contactName: Strin
         return null
     }
 }
+
+data class CallInfo(val number: String, val type: String, val contactName: String)
