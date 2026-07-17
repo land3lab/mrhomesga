@@ -264,29 +264,54 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
 
     <details class="guide">
       <summary>🔧 시트 연결하는 법 (한 번만, 5분)</summary>
+      <p class="hint" style="margin-top:4px"><b>⚠️ PC 브라우저에서 하는 것을 권장합니다.</b>
+      폰의 구글시트 앱에는 스크립트 메뉴가 없어요. (폰밖에 없다면 Chrome 주소창 ⋮ →
+      "데스크톱 사이트" 체크 후 진행 가능)</p>
       <ol>
-        <li><a href="https://sheets.google.com" target="_blank" rel="noopener">sheets.google.com</a>에서
-          새 스프레드시트 만들기 (이름 예: <b>매물 접수장</b>)</li>
-        <li>시트 메뉴 <b>확장 프로그램 → Apps Script</b> 클릭</li>
-        <li>편집기에 있는 기존 코드를 모두 지우고, 아래 [코드 복사]를 눌러 붙여넣기 → 저장(💾)</li>
-        <li>우상단 <b>배포 → 새 배포</b> → ⚙️에서 유형 <b>웹 앱</b> 선택 →
-          "액세스 권한이 있는 사용자"를 <b>모든 사용자</b>로 → <b>배포</b> → 권한 검토에서 내 계정 허용
-          ("확인되지 않은 앱" 경고가 나오면 <b>고급 → 이동</b> — 본인이 방금 만든 코드라 안전)</li>
-        <li>생성된 <b>웹 앱 URL</b>(https://script.google.com/…/exec)을 복사해 위 칸에 붙여넣고 [저장]</li>
-        <li>기존 기록도 시트에 넣으려면 [📤 기존 기록 전체 보내기] 한 번 클릭</li>
+        <li>브라우저에서 <a href="https://script.google.com/create" target="_blank" rel="noopener"><b>script.google.com/create</b></a>
+          접속 (구글 로그인) — 시트를 미리 만들 필요 없습니다, 나중에 자동 생성돼요</li>
+        <li>편집기 가운데 있는 기존 코드(<code>function myFunction()…</code>)를 모두 지우고,
+          아래 [📋 코드 복사]를 눌러 붙여넣기</li>
+        <li>위쪽 💾(프로젝트 저장) 클릭 — 프로젝트 이름은 아무거나 (예: 통화노트)</li>
+        <li>우상단 파란 <b>배포 → 새 배포</b> → 왼쪽 ⚙️(유형 선택) → <b>웹 앱</b> →
+          "액세스 권한이 있는 사용자"를 <b>모든 사용자</b>로 바꾸고 → <b>배포</b></li>
+        <li>"액세스 승인" 버튼 → 내 구글 계정 선택 →
+          "확인되지 않은 앱" 경고가 나오면 <b>고급 → (프로젝트명)(으)로 이동</b> → <b>허용</b>
+          (방금 본인이 만든 코드라 안전합니다)</li>
+        <li>생성된 <b>웹 앱 URL</b>(https://script.google.com/…/exec) 복사 → 위 칸에 붙여넣고 [저장]</li>
+        <li>기존 기록도 넣으려면 [📤 기존 기록 전체 보내기] 클릭 —
+          <b>구글 드라이브에 "통화노트 매물 접수장" 시트가 자동으로 생깁니다</b></li>
       </ol>
+      <p class="hint">※ 이미 쓰던 스프레드시트에 붙이고 싶다면: 그 시트를 PC에서 열고
+      메뉴 <b>확장 프로그램 → Apps Script</b>로 들어가 같은 코드를 붙여넣으면
+      새 파일을 만들지 않고 그 시트에 기록됩니다.</p>
       <div class="btnbar" style="margin-top:4px"><button class="btn" id="btn-copy-gscode">📋 코드 복사</button></div>
-      <pre id="gscode" style="overflow-x:auto; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:11.5px; line-height:1.45;">const SHEET_NAME = "통화노트";
+      <pre id="gscode" style="overflow-x:auto; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:11.5px; line-height:1.45;">const FILE_NAME = "통화노트 매물 접수장"; // 드라이브에 자동 생성될 시트 파일 이름
+const SHEET_NAME = "통화노트";
 const HEADERS = ["id","통화일시","구분","이름","연락처","고객유형","물건종류","거래유형",
   "주소/단지","매매가","보증금","월세","면적","층","방/욕실","입주일","희망조건",
   "특이사항","할일","요약","통화내용","수정일시"];
+
+// 시트에서 만든 스크립트면 그 시트를, 독립 스크립트면 자동 생성한 시트를 사용
+function getSpreadsheet() {
+  const props = PropertiesService.getScriptProperties();
+  const savedId = props.getProperty("ssid");
+  if (savedId) {
+    try { return SpreadsheetApp.openById(savedId); } catch (err) {}
+  }
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) { props.setProperty("ssid", active.getId()); return active; }
+  const created = SpreadsheetApp.create(FILE_NAME);
+  props.setProperty("ssid", created.getId());
+  return created;
+}
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
     const data = JSON.parse(e.postData.contents);
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = getSpreadsheet();
     const sh = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
     if (sh.getLastRow() === 0) sh.appendRow(HEADERS);
     const ids = sh.getRange(1, 1, sh.getLastRow(), 1).getValues().flat();
