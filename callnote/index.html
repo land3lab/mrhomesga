@@ -258,7 +258,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
     <input type="text" id="sheet-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
     <div class="btnbar">
       <button class="btn primary" id="btn-save-settings2">저장</button>
-      <button class="btn" id="btn-sheet-all">📤 기존 기록 전체 보내기</button>
+      <button class="btn" id="btn-sheet-all">📤 전체 다시 보내기</button>
     </div>
     <div class="status" id="sheet-status"></div>
 
@@ -278,10 +278,13 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
         <li>"액세스 승인" 버튼 → 내 구글 계정 선택 →
           "확인되지 않은 앱" 경고가 나오면 <b>고급 → (프로젝트명)(으)로 이동</b> → <b>허용</b>
           (방금 본인이 만든 코드라 안전합니다)</li>
-        <li>생성된 <b>웹 앱 URL</b>(https://script.google.com/…/exec) 복사 → 위 칸에 붙여넣고 [저장]</li>
-        <li>기존 기록도 넣으려면 [📤 기존 기록 전체 보내기] 클릭 —
+        <li>생성된 <b>웹 앱 URL</b>(https://script.google.com/…/exec) 복사 → 위 칸에 붙여넣고 [저장]
+          — 저장하는 순간 <b>기존 기록까지 전부 자동 전송</b>되고,
           <b>구글 드라이브에 "통화노트 매물 접수장" 시트가 자동으로 생깁니다</b></li>
       </ol>
+      <p class="hint">이후에는 아무것도 누를 필요 없습니다 — 기록을 저장·수정·삭제할 때마다 자동 반영되고,
+      인터넷이 끊긴 상태에서 저장한 기록도 다음에 앱을 열거나 인터넷이 연결되면 자동으로 올라갑니다.
+      [📤 전체 다시 보내기]는 시트를 실수로 지웠을 때 복구용입니다.</p>
       <p class="hint">※ 이미 쓰던 스프레드시트에 붙이고 싶다면: 그 시트를 PC에서 열고
       메뉴 <b>확장 프로그램 → Apps Script</b>로 들어가 같은 코드를 붙여넣으면
       새 파일을 만들지 않고 그 시트에 기록됩니다.</p>
@@ -455,6 +458,7 @@ function doPost(e) {
 /* ══════════════ 저장소 ══════════════ */
 const LS_RECORDS = "callnote_records";
 const LS_SETTINGS = "callnote_settings";
+const LS_DELETES = "callnote_pending_deletes"; // 시트에 아직 반영 못 한 삭제 id 목록
 
 function loadRecords() {
   try { return JSON.parse(localStorage.getItem(LS_RECORDS)) || []; } catch { return []; }
@@ -859,7 +863,7 @@ el("btn-save").onclick = () => {
     records.push(saved);
   }
   saveRecords(records);
-  if (saved) sheetSync(saved, "upsert"); // 구글시트 자동 반영 (설정 시)
+  flushSheetQueue(); // 구글시트 자동 반영 (설정 시, 이전 미전송분도 함께)
   renderList();
   show("list");
   tabs.edit.textContent = "＋ 새 기록";
@@ -871,7 +875,10 @@ el("btn-delete").onclick = () => {
   const removed = records.find(r => r.id === editingId);
   records = records.filter(r => r.id !== editingId);
   saveRecords(records);
-  if (removed) sheetSync(removed, "delete"); // 시트에서도 제거 (설정 시)
+  if (removed && (settings.sheetUrl || "").trim()) {
+    addPendingDelete(removed.id); // 시트에서도 제거 — 실패 시 다음 기회에 자동 재시도
+    flushSheetQueue();
+  }
   renderList();
   show("list");
   tabs.edit.textContent = "＋ 새 기록";
@@ -923,11 +930,17 @@ el("btn-save-settings").onclick = () => {
   persistSettings();
   showStatus("settings-status", "ok", "저장되었습니다." + (settings.apiKey ? "" : " (키가 비어 있어 AI 정리는 동작하지 않습니다)"));
 };
-el("btn-save-settings2").onclick = () => {
+el("btn-save-settings2").onclick = async () => {
   persistSettings();
-  showStatus("sheet-status", settings.sheetUrl ? "ok" : "info",
-    settings.sheetUrl ? "저장되었습니다 — 이제 기록을 저장할 때마다 시트에 자동 반영됩니다."
-                      : "URL이 비어 있어 시트 연동이 꺼져 있습니다.");
+  if (!settings.sheetUrl) {
+    showStatus("sheet-status", "info", "URL이 비어 있어 시트 연동이 꺼져 있습니다.");
+    return;
+  }
+  showStatus("sheet-status", "ok", "저장되었습니다 — 기존 기록을 자동 전송하는 중…");
+  const n = await flushSheetQueue(); // 연결 즉시 기존 기록도 자동으로 올린다
+  showStatus("sheet-status", "ok",
+    n > 0 ? `✅ 저장 완료 — 기존 기록 ${n}건을 자동 전송했습니다. 이후에는 저장할 때마다 자동 반영됩니다.`
+          : "✅ 저장 완료 — 이후 기록을 저장할 때마다 시트에 자동 반영됩니다.");
 };
 el("btn-copy-gscode").onclick = async () => {
   try {
@@ -976,11 +989,46 @@ async function sheetSync(record, action) {
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action, record: recordToSheetRow(record) }),
     });
+    if (action === "upsert") { record.syncedAt = Date.now(); saveRecords(records); }
     return true;
   } catch {
     return false;
   }
 }
+
+function pendingDeletes() {
+  try { return JSON.parse(localStorage.getItem(LS_DELETES)) || []; } catch { return []; }
+}
+function addPendingDelete(id) {
+  const list = pendingDeletes();
+  if (!list.includes(id)) { list.push(id); localStorage.setItem(LS_DELETES, JSON.stringify(list)); }
+}
+
+// 아직 시트에 못 올라간 기록(신규·수정·삭제)을 전부 자동 전송.
+// 앱 시작 시 / 온라인 복귀 시 / 저장·삭제 시 / URL 등록 시 호출된다.
+let sheetFlushing = false;
+async function flushSheetQueue() {
+  if (sheetFlushing || !(settings.sheetUrl || "").trim() || navigator.onLine === false) return 0;
+  sheetFlushing = true;
+  let sent = 0;
+  try {
+    const remaining = [];
+    for (const id of pendingDeletes()) {
+      const ok = await sheetSync({ id, createdAt: 0, updatedAt: 0, fields: emptyFields(), transcript: "" }, "delete");
+      ok ? sent++ : remaining.push(id);
+    }
+    localStorage.setItem(LS_DELETES, JSON.stringify(remaining));
+    for (const r of records) {
+      if (r.syncedAt && r.syncedAt >= (r.updatedAt || r.createdAt)) continue; // 이미 최신 상태로 전송됨
+      if (await sheetSync(r, "upsert")) sent++;
+    }
+  } finally {
+    sheetFlushing = false;
+  }
+  return sent;
+}
+window.addEventListener("online", () => { flushSheetQueue(); });
+// 강제 재전송: 이미 보낸 것 포함 전체를 다시 올린다 (시트를 실수로 지웠을 때 등)
 el("btn-sheet-all").onclick = async () => {
   persistSettings();
   if (!settings.sheetUrl) {
@@ -993,15 +1041,13 @@ el("btn-sheet-all").onclick = async () => {
   }
   const btn = el("btn-sheet-all");
   btn.disabled = true;
-  let sent = 0, failed = 0;
-  for (const r of records) {
-    showStatus("sheet-status", "info", `⏳ 전송 중… ${sent + failed + 1}/${records.length}`);
-    (await sheetSync(r, "upsert")) ? sent++ : failed++;
-  }
+  records.forEach(r => { r.syncedAt = 0; }); // 전부 미전송 상태로 되돌리고
+  showStatus("sheet-status", "info", `⏳ ${records.length}건 전송 중…`);
+  const sent = await flushSheetQueue(); //   자동 전송 루틴으로 재전송
   btn.disabled = false;
-  showStatus("sheet-status", failed ? "err" : "ok",
-    failed ? `전송 ${sent}건, 실패 ${failed}건 — 인터넷 연결을 확인하고 다시 시도해 주세요.`
-           : `✅ ${sent}건을 시트로 보냈습니다. 스프레드시트에서 확인해 보세요.`);
+  showStatus("sheet-status", sent >= records.length ? "ok" : "err",
+    sent >= records.length ? `✅ ${sent}건을 시트로 보냈습니다. 스프레드시트에서 확인해 보세요.`
+                           : `전송 ${sent}/${records.length}건 — 인터넷 연결을 확인해 주세요. 못 보낸 기록은 다음에 자동 재시도됩니다.`);
 };
 
 /* ══════════════ 백업 ══════════════ */
@@ -1130,6 +1176,7 @@ fillForm(emptyFields());
 initSettings();
 renderList();
 checkShared();
+flushSheetQueue(); // 앱을 열 때 미전송분(오프라인 중 저장한 기록 등) 자동 업로드
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});
