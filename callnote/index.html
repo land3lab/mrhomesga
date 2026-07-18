@@ -452,6 +452,23 @@ function runCallnote_(fnName, e) {
     </details>
 
     <details class="guide">
+      <summary>🔑 사장 폰을 바꿨을 때 (관리자 복구)</summary>
+      <p class="hint" style="margin-top:4px">관리자 키는 사장 폰에만 저장되므로, 폰을 바꾸거나
+      앱 데이터를 지우면 [직원 관리]가 동작하지 않습니다. 복구는 <b>스크립트를 만든 구글 계정의
+      주인만</b> 할 수 있습니다 (이것이 곧 소유권 증명):</p>
+      <ol>
+        <li>PC 브라우저에서 <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a>
+          접속 → 사장님 구글 계정으로 로그인 → 내 프로젝트(통화노트) 열기</li>
+        <li>왼쪽 ⚙️ <b>프로젝트 설정</b> → 아래 <b>스크립트 속성</b>에서
+          <code>adminKey</code> 행을 <b>삭제</b> 후 저장</li>
+        <li>새 폰의 통화노트 ⚙️ 설정 → 역할 [사장] → URL 입력 → <b>[저장]</b>
+          → 새 폰이 관리자로 등록됩니다 (직원 명단은 그대로 유지)</li>
+      </ol>
+      <p class="hint">매물 기록도 옮기려면: 새 폰에서 [🔄 시트에서 받기]를 누르면
+      시트에 있는 기록이 전부 들어옵니다.</p>
+    </details>
+
+    <details class="guide">
       <summary>데이터 보관 · 백업</summary>
       <ul>
         <li>상담 기록은 이 기기 브라우저에만 저장됩니다 (서버 없음).</li>
