@@ -254,15 +254,27 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
   </div>
 
   <div class="card">
-    <h2>📊 내 매물장 시트 (개인용)</h2>
-    <p class="hint" style="margin-top:0">
-      <b>내 기록은 내 것</b> — 기록을 저장·수정·삭제할 때마다 <b>내 구글 드라이브의 스프레드시트</b>에
-      자동 백업됩니다. 이 시트는 동료가 매물을 보내주는 <b>수신함</b> 역할도 해서,
-      동료가 공유한 매물이 앱을 열 때 자동으로 내 매물장에 들어옵니다.
-      아래 "시트 연결하는 법"을 따라 한 번만 설정하세요.
+    <h2>📊 매물장 시트 연결</h2>
+    <label class="f">내 역할</label>
+    <div class="chips" id="role-chips" style="margin:2px 0 6px">
+      <button data-role="admin" class="on">🧑‍💼 사장 (관리자)</button>
+      <button data-role="staff">직원</button>
+    </div>
+    <p class="hint" id="role-admin-help" style="margin-top:0">
+      <b>매물장 파일(시트)은 사무실에 하나</b> — 사장님이 아래 "시트 연결하는 법"으로 한 번만
+      연결하면, 시트 파일은 <b>사장님 구글 드라이브에만</b> 생깁니다. 직원은 [🧑‍💼 직원 관리]에서
+      추가하고, 발급된 초대코드로 접속하면 모두의 기록이 이 한 시트에 모여 서로 공유됩니다.
     </p>
-    <label class="f" for="sheet-url">내 웹 앱 URL (…/exec)</label>
+    <p class="hint hidden" id="role-staff-help" style="margin-top:0">
+      사장님에게 받은 <b>웹 앱 URL</b>과 <b>초대코드</b>를 입력하면 끝입니다
+      (스크립트 설정은 필요 없어요). 사무실 매물장이 자동으로 공유됩니다.
+    </p>
+    <label class="f" for="sheet-url">웹 앱 URL (…/exec)</label>
     <input type="text" id="sheet-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+    <div id="role-staff-box" class="hidden">
+      <label class="f" for="sheet-key-input">초대코드</label>
+      <input type="text" id="sheet-key-input" autocomplete="off" style="text-transform:uppercase">
+    </div>
     <div class="btnbar">
       <button class="btn primary" id="btn-save-settings2">저장</button>
       <button class="btn" id="btn-sheet-test">🔍 연결 테스트</button>
@@ -270,11 +282,26 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
       <button class="btn" id="btn-sheet-all">📤 전체 다시 보내기</button>
     </div>
     <div class="status" id="sheet-status"></div>
-    <p class="hint">동료에게 매물을 받으려면 이 URL을 동료에게 알려줘서 동료의 [👥 공유 대상]에
-    등록하게 하세요. (URL을 아는 사람만 보낼 수 있습니다)</p>
+  </div>
 
-    <details class="guide">
-      <summary>🔧 시트 연결하는 법 (한 번만, 5분)</summary>
+  <div class="card" id="staff-card">
+    <h2>🧑‍💼 직원 관리 (사장 전용)</h2>
+    <p class="hint" style="margin-top:0">
+      직원을 추가하면 <b>초대코드</b>가 발급됩니다 — [📋 초대문]을 눌러 카톡으로 보내주세요.
+      직원을 <b>삭제하면 그 즉시</b> 그 직원 앱은 매물장에 접근할 수 없게 됩니다.
+    </p>
+    <div class="row">
+      <input type="text" id="staff-name" placeholder="직원 이름" autocomplete="off">
+      <button class="btn primary" id="btn-staff-add" style="flex:0 0 auto">＋ 직원 추가</button>
+    </div>
+    <div class="btnbar"><button class="btn" id="btn-staff-refresh">🔄 명단 새로고침</button></div>
+    <div id="staff-list" style="margin-top:8px"></div>
+    <div class="status" id="staff-status"></div>
+  </div>
+
+  <div class="card" id="setup-guide-card">
+    <details class="guide" style="border-top:none; padding-top:0">
+      <summary>🔧 시트 연결하는 법 (사장님이 한 번만, 5분)</summary>
       <p class="hint" style="margin-top:4px"><b>⚠️ PC 브라우저에서 하는 것을 권장합니다.</b>
       폰의 구글시트 앱에는 스크립트 메뉴가 없어요. (폰밖에 없다면 Chrome 주소창 ⋮ →
       "데스크톱 사이트" 체크 후 진행 가능)</p>
@@ -340,8 +367,10 @@ function runCallnote_(fnName, e) {
       <div><label class="f" for="ct-name">이름</label><input type="text" id="ct-name" autocomplete="off"></div>
       <div><label class="f" for="ct-group">그룹 (선택)</label><input type="text" id="ct-group" autocomplete="off"></div>
     </div>
-    <label class="f" for="ct-url">동료의 웹 앱 URL (…/exec)</label>
+    <label class="f" for="ct-url">상대방 웹 앱 URL (…/exec)</label>
     <input type="text" id="ct-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+    <label class="f" for="ct-code">상대방 초대코드 (상대 사무실 사장님이 발급 — 개인 사용 상대면 비워둠)</label>
+    <input type="text" id="ct-code" autocomplete="off" style="text-transform:uppercase">
     <div class="btnbar"><button class="btn primary" id="btn-ct-add">＋ 추가</button></div>
     <div id="ct-list" style="margin-top:8px"></div>
     <div class="status" id="ct-status"></div>
@@ -401,23 +430,25 @@ function runCallnote_(fnName, e) {
     </details>
 
     <details class="guide">
-      <summary>👥 직원들과 함께 쓰기 — 각자 매물장 + 골라서 공유</summary>
-      <p class="hint" style="margin-top:4px"><b>기본 원칙: 매물장은 각자 개인 것입니다.</b>
-      각자 자기 폰에 기록하고 자기 시트에 백업하며, 공유하고 싶은 매물만 골라서 보냅니다.</p>
+      <summary>👥 사무실에서 함께 쓰기 — 하나의 매물장, 직원은 사장님이 관리</summary>
+      <p class="hint" style="margin-top:4px"><b>매물장 파일(시트)은 사무실에 하나</b>,
+      사장님 구글 드라이브에만 있습니다. 직원은 초대코드로 접속해 함께 쓰고,
+      사장님이 직원을 추가·삭제합니다.</p>
       <ol>
-        <li><b>직원 각자 설치·설정</b>: 앱 설치(웹 land3lab.github.io/mrhomesga/callnote 또는
-          APK) → 각자 AI 키 발급 → 각자 [📊 내 매물장 시트] 연결 (각자 자기 구글 계정으로)</li>
-        <li><b>서로 주소록 등록</b>: 각자 ⚙️ 설정의 <b>내 웹 앱 URL</b>을 동료에게 알려주고,
-          서로 [👥 공유 대상]에 이름·그룹과 함께 추가 (예: 그룹 "관악센터")</li>
-        <li><b>보내기</b>: 목록에서 <b>[📤 매물 공유하기]</b> → 매물을 터치해 선택
-          (1건, 여러 건, [전체 선택] 모두 가능) → [보내기] → 직원 개인 선택 또는
-          <b>그룹 버튼으로 한 번에 선택</b> → 전송.
-          기록 열람 중에는 [📤 공유] 버튼으로 그 매물만 바로 보낼 수 있어요.</li>
-        <li><b>받기</b>: 받는 직원은 아무것도 안 해도 됩니다 — 앱을 열면 자기 시트(수신함)에서
-          자동으로 받아와 매물장에 추가됩니다. 바로 확인하려면 [🔄 시트에서 받기].</li>
+        <li><b>사장(한 번만)</b>: [📊 매물장 시트 연결]에서 역할 <b>사장</b> →
+          [🔧 시트 연결하는 법]대로 연결 → [저장]</li>
+        <li><b>사장</b>: [🧑‍💼 직원 관리]에서 직원 이름 입력 → <b>＋ 직원 추가</b> →
+          자동 복사된 <b>초대문을 카톡으로</b> 직원에게 전송</li>
+        <li><b>직원</b>: 앱 설치 → ⚙️ 설정 → 역할 <b>직원</b> → 받은 URL·초대코드 입력 →
+          [저장]. 끝 — 스크립트 설정이 필요 없습니다</li>
+        <li>이후 누가 저장하든 <b>모두의 앱과 시트에 자동 공유</b>됩니다
+          (앱을 열 때 자동 수신, [🔄 시트에서 받기]로 즉시 확인)</li>
+        <li><b>직원 삭제</b>: [🧑‍💼 직원 관리]에서 삭제 → 그 즉시 접근 차단.
+          <b>시트 파일과 [⬇️ 내보내기]는 사장만</b> 사용할 수 있습니다</li>
       </ol>
-      <p class="hint">보낸 매물은 받는 사람의 매물장에 <b>복사</b>됩니다 — 이후 각자 수정해도
-      서로에게 영향을 주지 않습니다. 다시 보내면 최신 내용으로 갱신돼요.</p>
+      <p class="hint">※ 직원 앱 화면에도 매물이 보이는 것은 업무상 어쩔 수 없으므로,
+      "완전한 유출 방지"보다는 <b>퇴사 후 접근 차단 + 파일 관리 권한 분리</b> 개념입니다.
+      [👥 공유 대상(주소록)]은 다른 사무실 등 외부와 매물을 주고받을 때 쓰는 별도 기능입니다.</p>
     </details>
 
     <details class="guide">
@@ -545,7 +576,7 @@ function show(name) {
 }
 tabs.list.onclick = () => { stopMic(); renderList(); show("list"); };
 tabs.edit.onclick = () => { openEdit(null); };
-tabs.settings.onclick = () => { stopMic(); show("settings"); };
+tabs.settings.onclick = () => { stopMic(); show("settings"); loadStaffList(false); };
 
 /* ══════════════ 목록 ══════════════ */
 let filterCat = "";
@@ -964,14 +995,46 @@ function initSettings() {
   el("api-key").value = settings.apiKey || "";
   el("model").value = settings.model || "";
   el("sheet-url").value = settings.sheetUrl || "";
+  el("sheet-key-input").value = settings.staffCode || "";
   renderContacts();
+  applyRoleUI();
 }
 function persistSettings() {
   settings.apiKey = el("api-key").value.trim();
   settings.model = el("model").value.trim();
   settings.sheetUrl = el("sheet-url").value.trim();
+  settings.staffCode = el("sheet-key-input").value.trim().toUpperCase();
   saveSettings(settings);
 }
+
+/* ── 역할(사장/직원)과 접근 키 ── */
+function currentRole() { return settings.sheetRole === "staff" ? "staff" : "admin"; }
+function myKey() { return currentRole() === "staff" ? (settings.staffCode || "") : (settings.adminKey || ""); }
+function sheetGetUrl(params) {
+  const url = (settings.sheetUrl || "").trim();
+  const p = new URLSearchParams(params);
+  const key = myKey();
+  if (key) p.set("key", key);
+  const qs = p.toString();
+  return qs ? url + (url.includes("?") ? "&" : "?") + qs : url;
+}
+function applyRoleUI() {
+  const staff = currentRole() === "staff";
+  el("role-chips").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.role === currentRole()));
+  el("role-admin-help").classList.toggle("hidden", staff);
+  el("role-staff-help").classList.toggle("hidden", !staff);
+  el("role-staff-box").classList.toggle("hidden", !staff);
+  el("staff-card").classList.toggle("hidden", staff);      // 직원 관리는 사장 전용
+  el("setup-guide-card").classList.toggle("hidden", staff); // 직원은 스크립트 설정 불필요
+  el("btn-export").classList.toggle("hidden", staff);       // 다운로드(내보내기)는 사장만
+}
+el("role-chips").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  settings.sheetRole = b.dataset.role;
+  saveSettings(settings);
+  applyRoleUI();
+});
 el("btn-save-settings").onclick = () => {
   persistSettings();
   showStatus("settings-status", "ok", "저장되었습니다." + (settings.apiKey ? "" : " (키가 비어 있어 AI 정리는 동작하지 않습니다)"));
@@ -982,11 +1045,31 @@ el("btn-save-settings2").onclick = async () => {
     showStatus("sheet-status", "info", "URL이 비어 있어 시트 연동이 꺼져 있습니다.");
     return;
   }
-  showStatus("sheet-status", "ok", "저장되었습니다 — 기존 기록을 자동 전송하는 중…");
+  if (currentRole() === "staff" && !settings.staffCode) {
+    showStatus("sheet-status", "err", "초대코드를 입력해 주세요 — 사장님이 [🧑‍💼 직원 관리]에서 발급합니다.");
+    return;
+  }
+  if (currentRole() === "admin") {
+    if (!settings.adminKey) { // 이 폰을 관리자로 등록할 키를 자동 생성
+      settings.adminKey = "AK" + Math.random().toString(36).slice(2, 10).toUpperCase() + Date.now().toString(36).toUpperCase();
+      saveSettings(settings);
+    }
+    showStatus("sheet-status", "info", "⏳ 관리자 등록 확인 중…");
+    try {
+      const j = await (await fetch(sheetGetUrl({ action: "admin_init" }))).json();
+      if (!j.ok && j.error === "admin_exists") {
+        showStatus("sheet-status", "err",
+          "이 시트에는 이미 다른 폰이 관리자로 등록되어 있습니다. 폰을 바꾸셨다면 이전 폰의 ⚙️ 설정을 확인하거나, 새 스크립트를 배포해 새로 연결해 주세요.");
+        return;
+      }
+    } catch { /* 응답을 못 읽는 환경이어도 저장/전송은 계속 진행 */ }
+  }
+  showStatus("sheet-status", "ok", "저장되었습니다 — 매물장 동기화 중…");
   const n = await flushSheetQueue(); // 연결 즉시 기존 기록도 자동으로 올린다
+  await sheetPull(false);            // 사무실 매물장도 바로 받아온다
+  renderList();
   showStatus("sheet-status", "ok",
-    n > 0 ? `✅ 저장 완료 — 기존 기록 ${n}건을 자동 전송했습니다. 이후에는 저장할 때마다 자동 반영됩니다.`
-          : "✅ 저장 완료 — 이후 기록을 저장할 때마다 시트에 자동 반영됩니다.");
+    `✅ 연결 완료${n > 0 ? ` — 기존 기록 ${n}건 자동 전송` : ""} — 이후에는 저장할 때마다 자동 반영되고, 사무실 매물장이 자동으로 공유됩니다.`);
 };
 el("btn-copy-gscode").onclick = async () => {
   try {
@@ -1033,7 +1116,7 @@ async function postSheet(url, payload) {
   };
   try {
     const res = await fetch(url, opts);
-    return res.ok && (await res.text()).includes('"ok"');
+    return res.ok && (await res.text()).includes('"ok":true');
   } catch {
     try { await fetch(url, { ...opts, mode: "no-cors" }); return true; } catch { return false; }
   }
@@ -1041,7 +1124,7 @@ async function postSheet(url, payload) {
 async function sheetSync(record, action) {
   const url = (settings.sheetUrl || "").trim();
   if (!url) return null;
-  const ok = await postSheet(url, { action, record: recordToSheetRow(record) });
+  const ok = await postSheet(url, { action, key: myKey(), record: recordToSheetRow(record) });
   if (ok && action === "upsert") { record.syncedAt = Date.now(); saveRecords(records); }
   return ok;
 }
@@ -1077,7 +1160,7 @@ async function sheetPull(showResult) {
   const url = (settings.sheetUrl || "").trim();
   if (!url) return 0;
   try {
-    const res = await fetch(url + (url.includes("?") ? "&" : "?") + "action=list");
+    const res = await fetch(sheetGetUrl({ action: "list" }));
     const j = await res.json();
     if (!j.ok || !Array.isArray(j.rows)) throw new Error("bad response");
     let added = 0, updated = 0;
@@ -1150,9 +1233,9 @@ el("btn-ct-add").onclick = () => {
     return;
   }
   if (!Array.isArray(settings.contacts)) settings.contacts = [];
-  settings.contacts.push({ name, group, url });
+  settings.contacts.push({ name, group, url, code: el("ct-code").value.trim().toUpperCase() });
   saveSettings(settings);
-  el("ct-name").value = el("ct-group").value = el("ct-url").value = "";
+  el("ct-name").value = el("ct-group").value = el("ct-url").value = el("ct-code").value = "";
   renderContacts();
   showStatus("ct-status", "ok", `✅ ${name} 님을 추가했습니다. 이제 목록에서 매물을 골라 보낼 수 있어요.`);
 };
@@ -1206,7 +1289,7 @@ el("send-go").onclick = async () => {
   for (const c of picked) {
     for (const r of sendRecords) {
       showStatus("send-status", "info", `⏳ ${c.name} 님에게 보내는 중… (${done + fail + 1}/${total})`);
-      (await postSheet(c.url, { action: "upsert", record: recordToSheetRow(r) })) ? done++ : fail++;
+      (await postSheet(c.url, { action: "upsert", key: c.code || "", record: recordToSheetRow(r) })) ? done++ : fail++;
     }
   }
   el("send-go").disabled = false;
@@ -1314,15 +1397,24 @@ el("btn-sheet-test").onclick = async () => {
   }
   showStatus("sheet-status", "info", "⏳ 연결 확인 중…");
   try {
-    const res = await fetch(url);
+    const res = await fetch(sheetGetUrl({}));
     const text = await res.text();
     let j = null;
     try { j = JSON.parse(text); } catch {}
-    if (j && j.ok) {
+    if (j && j.ok && j.sheet) { // 관리자(또는 아직 직원 미등록 상태)
       const n = el("sheet-status");
       n.className = "status show ok";
-      n.innerHTML = `✅ 연결 성공! 기록이 저장될 시트: <a href="${esc(j.sheet)}" target="_blank" rel="noopener" style="color:inherit; font-weight:700">여기를 눌러 열기</a>`;
-      flushSheetQueue(); // 연결이 확인됐으니 밀린 기록도 바로 올린다
+      n.innerHTML = `✅ 연결 성공 (관리자)! 매물장 시트: <a href="${esc(j.sheet)}" target="_blank" rel="noopener" style="color:inherit; font-weight:700">여기를 눌러 열기</a>`;
+      flushSheetQueue().then(() => sheetPull(false)); // 연결이 확인됐으니 바로 동기화
+    } else if (j && j.ok) { // 직원으로 연결됨 (시트 파일 위치는 알려주지 않음)
+      showStatus("sheet-status", "ok",
+        `✅ 연결 성공 — ${j.name ? j.name + " 님, " : ""}직원으로 연결됐습니다. 사무실 매물장이 자동으로 공유됩니다.`);
+      flushSheetQueue().then(() => sheetPull(false));
+    } else if (j && j.error === "unauthorized") {
+      showStatus("sheet-status", "err",
+        currentRole() === "staff"
+          ? "초대코드가 올바르지 않거나 삭제되었습니다 — 사장님께 초대코드를 다시 확인해 주세요."
+          : "이 시트의 관리자 키와 일치하지 않습니다. 폰을 바꾸셨다면 새 스크립트를 배포해 새로 연결해 주세요.");
     } else {
       showStatus("sheet-status", "err",
         "연결은 되지만 응답이 예상과 다릅니다. Apps Script 편집기에서 ① 코드를 최신([📋 코드 복사]의 코드)으로 바꾸고 ② 배포 → 배포 관리 → ✏️ 수정 → 버전: '새 버전' → 배포를 다시 해주세요.");
@@ -1332,6 +1424,91 @@ el("btn-sheet-test").onclick = async () => {
       "연결 실패 — ① URL이 …/exec 인지 ② 배포 시 '액세스 권한: 모든 사용자'로 했는지 ③ 인터넷 연결을 확인해 주세요. 배포 관리에서 액세스 권한을 바꾼 뒤에는 '새 버전'으로 다시 배포해야 합니다.");
   }
 };
+
+/* ══════════════ 직원 관리 (사장 전용) ══════════════ */
+function inviteText(name, code) {
+  return `📞 통화노트 초대 — ${name}님
+1) 앱 설치: https://land3lab.github.io/mrhomesga/callnote/
+   (갤럭시 앱: github.com/land3lab/mrhomesga/releases 에서 callnote.apk)
+2) 앱에서 ⚙️ 설정·가이드 → [📊 매물장 시트 연결] → 역할 [직원] 선택
+3) 웹 앱 URL: ${settings.sheetUrl}
+4) 초대코드: ${code}
+5) [저장]을 누르면 사무실 매물장이 자동으로 연결됩니다`;
+}
+
+async function loadStaffList(showErr) {
+  if (currentRole() !== "admin" || !(settings.sheetUrl || "").trim() || !settings.adminKey) return;
+  try {
+    const j = await (await fetch(sheetGetUrl({ action: "staff_list" }))).json();
+    if (!j.ok) throw new Error(j.error);
+    renderStaffList(j.staff || []);
+  } catch {
+    if (showErr) showStatus("staff-status", "err", "명단을 불러오지 못했습니다 — 위에서 [저장]과 [🔍 연결 테스트]를 먼저 해주세요.");
+  }
+}
+
+function renderStaffList(list) {
+  el("staff-list").innerHTML = list.length ? list.map(s => `
+    <div style="display:flex; align-items:center; gap:8px; padding:7px 0; border-top:1px solid var(--line); font-size:14px">
+      <b>${esc(s.name)}</b>
+      <code style="color:var(--muted); font-size:12.5px">${esc(s.code)}</code>
+      <span style="flex:1"></span>
+      <button class="btn" data-invite="${esc(s.code)}" data-name="${esc(s.name)}" style="padding:4px 10px; flex:none">📋 초대문</button>
+      <button class="btn danger" data-remove="${esc(s.code)}" data-name="${esc(s.name)}" style="padding:4px 10px; flex:none">삭제</button>
+    </div>`).join("") : `<p class="hint">등록된 직원이 없습니다 — 위에서 이름을 넣고 추가하세요.</p>`;
+  el("staff-list").querySelectorAll("[data-invite]").forEach(b => {
+    b.onclick = async () => {
+      const text = inviteText(b.dataset.name, b.dataset.invite);
+      try {
+        await navigator.clipboard.writeText(text);
+        showStatus("staff-status", "ok", `📋 ${b.dataset.name}님 초대문 복사 완료 — 카톡에 붙여넣어 보내세요.`);
+      } catch {
+        prompt("아래 내용을 복사해 전달하세요", text);
+      }
+    };
+  });
+  el("staff-list").querySelectorAll("[data-remove]").forEach(b => {
+    b.onclick = async () => {
+      if (!confirm(`'${b.dataset.name}' 직원을 삭제할까요?\n삭제 즉시 그 직원 앱은 매물장에 접근할 수 없게 됩니다.`)) return;
+      showStatus("staff-status", "info", "⏳ 삭제 중…");
+      try {
+        const j = await (await fetch(sheetGetUrl({ action: "staff_remove", code: b.dataset.remove }))).json();
+        if (!j.ok) throw new Error(j.error);
+        await loadStaffList(false);
+        showStatus("staff-status", "ok", `✅ ${b.dataset.name}님을 삭제했습니다 — 접근이 차단됐습니다.`);
+      } catch {
+        showStatus("staff-status", "err", "삭제 실패 — 인터넷 연결을 확인하고 다시 시도해 주세요.");
+      }
+    };
+  });
+}
+
+el("btn-staff-add").onclick = async () => {
+  persistSettings();
+  const name = el("staff-name").value.trim();
+  if (!name) { showStatus("staff-status", "err", "직원 이름을 입력해 주세요."); return; }
+  if (!(settings.sheetUrl || "").trim() || !settings.adminKey) {
+    showStatus("staff-status", "err", "먼저 위에서 시트를 연결([저장])해 주세요.");
+    return;
+  }
+  showStatus("staff-status", "info", "⏳ 초대코드 발급 중…");
+  try {
+    const j = await (await fetch(sheetGetUrl({ action: "staff_add", name }))).json();
+    if (!j.ok) throw new Error(j.error);
+    el("staff-name").value = "";
+    await loadStaffList(false);
+    try {
+      await navigator.clipboard.writeText(inviteText(j.name, j.code));
+      showStatus("staff-status", "ok", `✅ ${j.name}님 추가 완료 (초대코드 ${j.code}) — 초대문이 복사됐으니 카톡에 붙여넣어 보내세요.`);
+    } catch {
+      showStatus("staff-status", "ok", `✅ ${j.name}님 추가 완료 — 초대코드 ${j.code}. [📋 초대문]을 눌러 전달하세요.`);
+    }
+  } catch {
+    showStatus("staff-status", "err",
+      "추가 실패 — [🔍 연결 테스트]가 성공하는지, 스크립트가 최신 연결 코드([📋 코드 복사])인지 확인해 주세요.");
+  }
+};
+el("btn-staff-refresh").onclick = () => loadStaffList(true);
 
 // 강제 재전송: 이미 보낸 것 포함 전체를 다시 올린다 (시트를 실수로 지웠을 때 등)
 el("btn-sheet-all").onclick = async () => {
