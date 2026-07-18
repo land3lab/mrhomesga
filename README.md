@@ -5,8 +5,8 @@ Claude AI로 **블로그 포스트 + 카드뉴스**를 생성한 뒤 **Tistory �
 
 > 이 저장소에는 별도 앱들이 함께 있습니다:
 > - [`dongne/`](dongne/README.md) — 재건축 동네분석 PWA
-> - [`callnote/`](callnote/README.md) — 📞 통화노트: 통화 녹음/받아쓰기를 AI가 매물 접수·고객 상담 카드로 자동 정리하는 PWA
-> - [`callnote-android/`](callnote-android/README.md) — 📱 통화노트 안드로이드 앱: 통화 종료를 자동 감지해 녹음 정리 알림을 띄우는 네이티브 래퍼
+> - [`callnote/`](callnote/README.md) — 📞 매통이: 통화 녹음/받아쓰기를 AI가 매물 접수·고객 상담 카드로 자동 정리하는 PWA
+> - [`callnote-android/`](callnote-android/README.md) — 📱 매통이 안드로이드 앱: 통화 종료를 자동 감지해 녹음 정리 알림을 띄우는 네이티브 래퍼
 
 ## 아키텍처
 

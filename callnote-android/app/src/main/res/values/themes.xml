@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.CallNote" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="colorPrimary">#0A8F5C</item>
-        <item name="colorPrimaryDark">#087A4E</item>
-        <item name="colorAccent">#0A8F5C</item>
-        <item name="android:statusBarColor">#0A8F5C</item>
+        <item name="colorPrimary">#FF5A00</item>
+        <item name="colorPrimaryDark">#D94C00</item>
+        <item name="colorAccent">#FF5A00</item>
+        <item name="android:statusBarColor">#FF5A00</item>
     </style>
 </resources>
