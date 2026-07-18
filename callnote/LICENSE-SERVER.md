@@ -30,7 +30,20 @@ function runLic_(fnName, e) {
   const logic = eval(code + "\n;__logic__;");
   return logic[fnName](e);
 }
+
+// ⚠️ 지우지 마세요 — 구글이 필요한 권한(시트·속성·잠금·외부연결)을
+// 승인 창에 표시하도록 알려주는 선언부입니다 (실제로 실행되지는 않음)
+function __scopes__() {
+  SpreadsheetApp.getActive();
+  PropertiesService.getScriptProperties();
+  LockService.getScriptLock();
+  UrlFetchApp.fetch("https://example.com");
+}
 ```
+
+> 붙여넣은 뒤 **함수 선택 드롭다운에서 `__scopes__` 선택 → [실행]** 을 한 번 눌러
+> 권한 승인 창을 띄우고 **허용**해야 한다 (이때 "스프레드시트 보기·관리" 권한이
+> 보이면 정상). 그 다음 배포 관리 → ✏️ → "새 버전" → 배포.
 
 3. **배포 → 새 배포 → 웹 앱** → 액세스 "**모든 사용자**" → 배포 → 권한 승인
 4. 생성된 **웹 앱 URL(…/exec)을 개발자(Claude)에게 전달** →

@@ -361,6 +361,15 @@ function runCallnote_(fnName, e) {
   }
   const logic = eval(code + "\n;__logic__;");
   return logic[fnName](e);
+}
+
+// ⚠️ 지우지 마세요 — 구글이 필요한 권한(시트·속성·잠금·외부연결)을
+// 승인 창에 표시하도록 알려주는 선언부입니다 (실제로 실행되지는 않음)
+function __scopes__() {
+  SpreadsheetApp.getActive();
+  PropertiesService.getScriptProperties();
+  LockService.getScriptLock();
+  UrlFetchApp.fetch("https://example.com");
 }</pre>
       <p class="hint">시트의 1행(제목)과 id 열은 앱이 기록을 찾아 갱신하는 기준이므로 지우지 마세요.
       이 연결 코드는 <b>한 번만</b> 붙여넣으면 됩니다 — 실제 동작 코드를 자동으로 받아오는 구조라,
