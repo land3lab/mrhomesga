@@ -302,75 +302,30 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
       메뉴 <b>확장 프로그램 → Apps Script</b>로 들어가 같은 코드를 붙여넣으면
       새 파일을 만들지 않고 그 시트에 기록됩니다.</p>
       <div class="btnbar" style="margin-top:4px"><button class="btn" id="btn-copy-gscode">📋 코드 복사</button></div>
-      <pre id="gscode" style="overflow-x:auto; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:11.5px; line-height:1.45;">const FILE_NAME = "통화노트 매물 접수장"; // 드라이브에 자동 생성될 시트 파일 이름
-const SHEET_NAME = "통화노트";
-const HEADERS = ["id","통화일시","구분","이름","연락처","고객유형","물건종류","거래유형",
-  "주소/단지","매매가","보증금","월세","면적","층","방/욕실","입주일","희망조건",
-  "특이사항","할일","요약","통화내용","수정일시"];
+      <pre id="gscode" style="overflow-x:auto; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:11.5px; line-height:1.45;">// 통화노트 연결 코드 — 이 코드는 한 번만 붙여넣으면 됩니다.
+// 실제 동작 코드는 아래 주소에서 자동으로 최신 버전을 받아오므로,
+// 이후 통화노트가 업데이트돼도 이 스크립트를 다시 고칠 필요가 없습니다.
+const LOGIC_URL = "https://land3lab.github.io/mrhomesga/callnote/gs-logic.js";
 
-// 시트에서 만든 스크립트면 그 시트를, 독립 스크립트면 자동 생성한 시트를 사용
-function getSpreadsheet() {
-  const props = PropertiesService.getScriptProperties();
-  const savedId = props.getProperty("ssid");
-  if (savedId) {
-    try { return SpreadsheetApp.openById(savedId); } catch (err) {}
-  }
-  const active = SpreadsheetApp.getActiveSpreadsheet();
-  if (active) { props.setProperty("ssid", active.getId()); return active; }
-  const created = SpreadsheetApp.create(FILE_NAME);
-  props.setProperty("ssid", created.getId());
-  return created;
-}
+function doGet(e) { return runCallnote_("handleGet", e); }
+function doPost(e) { return runCallnote_("handlePost", e); }
 
-// 연결 테스트 + 수신함 읽기 — ?action=list 로 호출하면 최근 기록을 돌려준다
-// (앱이 이걸로 "동료가 보내준 매물"을 자동으로 받아온다)
-function doGet(e) {
-  const ss = getSpreadsheet();
-  if (e && e.parameter && e.parameter.action === "list") {
-    const sh = ss.getSheetByName(SHEET_NAME);
-    const rows = [];
-    if (sh && sh.getLastRow() > 1) {
-      const values = sh.getRange(1, 1, sh.getLastRow(), HEADERS.length).getValues();
-      const start = Math.max(1, values.length - 500); // 최근 500건까지
-      for (let i = start; i < values.length; i++) {
-        const o = {};
-        HEADERS.forEach(function (h, j) { o[h] = values[i][j]; });
-        rows.push(o);
-      }
+function runCallnote_(fnName, e) {
+  const cache = CacheService.getScriptCache();
+  let code = cache.get("callnote_logic");
+  if (!code) {
+    code = UrlFetchApp.fetch(LOGIC_URL, { muteHttpExceptions: true }).getContentText();
+    if (code &amp;&amp; code.indexOf("__logic__") > -1) {
+      try { cache.put("callnote_logic", code, 300); } catch (err) {} // 5분 캐시
     }
-    return ContentService.createTextOutput(JSON.stringify({ ok: true, rows: rows }))
-      .setMimeType(ContentService.MimeType.JSON);
   }
-  return ContentService.createTextOutput(
-    JSON.stringify({ ok: true, sheet: ss.getUrl() })
-  ).setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    const data = JSON.parse(e.postData.contents);
-    const ss = getSpreadsheet();
-    const sh = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
-    if (sh.getLastRow() === 0) sh.appendRow(HEADERS);
-    const ids = sh.getRange(1, 1, sh.getLastRow(), 1).getValues().flat();
-    const rowIdx = ids.indexOf(data.record.id) + 1;
-    if (data.action === "delete") {
-      if (rowIdx > 1) sh.deleteRow(rowIdx);
-    } else {
-      const row = HEADERS.map(function (h) { return data.record[h] || ""; });
-      if (rowIdx > 1) sh.getRange(rowIdx, 1, 1, HEADERS.length).setValues([row]);
-      else sh.appendRow(row);
-    }
-    return ContentService.createTextOutput(JSON.stringify({ ok: true }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } finally {
-    lock.releaseLock();
-  }
+  const logic = eval(code + "\n;__logic__;");
+  return logic[fnName](e);
 }</pre>
       <p class="hint">시트의 1행(제목)과 id 열은 앱이 기록을 찾아 갱신하는 기준이므로 지우지 마세요.
-      나중에 코드를 바꿨다면 배포 → 배포 관리에서 "새 버전"으로 다시 배포해야 반영됩니다.</p>
+      이 연결 코드는 <b>한 번만</b> 붙여넣으면 됩니다 — 실제 동작 코드를 자동으로 받아오는 구조라,
+      이후 통화노트가 업데이트돼도 스크립트를 다시 고치거나 재배포할 필요가 없습니다.
+      (붙여넣거나 교체한 그 때만 배포 → 배포 관리 → ✏️ → "새 버전"으로 재배포)</p>
     </details>
   </div>
 
