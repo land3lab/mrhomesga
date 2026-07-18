@@ -44,7 +44,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: callnote-android
-          name: 매통이 안드로이드 앱 (최신)
+          name: RSAR Land3 매통이 안드로이드 앱 (최신)
           body: |
             폰에서 아래 **callnote.apk**를 다운로드해 설치하세요.
 
