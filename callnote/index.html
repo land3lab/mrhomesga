@@ -1831,9 +1831,9 @@ initSettings();
 renderList();
 checkShared();
 /* ══════════════ 이용권 (30일 무료 체험 + 이용코드) ══════════════ */
-// RSAR 라이선스 서버 웹 앱 URL — 판매자가 gs-license.js 로직을 배포한 뒤 여기에 고정.
+// RSAR 라이선스 서버 웹 앱 URL — 판매자(RSAR)의 '매통이 라이선스' 시트와 연결됨.
 // 비어 있으면 기기 자체 판정(체험 30일 + 코드 형식 검사)으로 동작한다.
-const LICENSE_URL = "";
+const LICENSE_URL = "https://script.google.com/macros/s/AKfycbxWc7PoSlZcsOpLmgHmRd_Zh8GuKRtu6HQZJI6CqAZ2SHaQJPK792m3vKq0HqSN6JH7Fw/exec";
 const TRIAL_DAYS = 30;
 let viewOnlyMode = false;
 
