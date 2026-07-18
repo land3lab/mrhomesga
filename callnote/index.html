@@ -235,6 +235,18 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
 <section id="view-settings" class="hidden">
 
   <div class="card">
+    <h2>🎫 이용권</h2>
+    <div class="status show info" id="lic-status" style="margin-top:0"></div>
+    <label class="f" for="lic-input2">이용코드 등록 / 변경</label>
+    <div class="row">
+      <input type="text" id="lic-input2" autocomplete="off" style="text-transform:uppercase">
+      <button class="btn primary" id="lic-submit2" style="flex:0 0 auto">등록</button>
+    </div>
+    <p class="hint">설치 후 30일은 무료 체험입니다. 이후에는 이용코드가 필요해요 —
+    코드 문의: <b>RSAR Land3 관악센터</b>.</p>
+  </div>
+
+  <div class="card">
     <h2>🤖 AI 설정 (Google Gemini)</h2>
     <p class="hint" style="margin-top:0">
       녹음 파일 전사와 자동 정리에 Google Gemini API를 사용합니다 (무료 등급으로 충분).
@@ -576,6 +588,24 @@ function runCallnote_(fnName, e) {
 </section>
 
 </main>
+
+<!-- 이용권 만료 잠금 -->
+<div id="license-modal" class="modal hidden">
+  <div class="modal-card">
+    <h2>🎫 무료 체험 기간이 끝났어요</h2>
+    <p>매통이 무료 체험 30일이 지났습니다. 계속 쓰시려면 이용코드를 등록해 주세요.<br>
+    <b>코드 문의: RSAR Land3 관악센터</b></p>
+    <input type="text" id="lic-input" placeholder="이용코드 입력 (예: MT-…)"
+           autocomplete="off" style="text-transform:uppercase; margin-top:8px">
+    <div class="btnbar">
+      <button class="btn primary" id="lic-submit">코드 등록</button>
+      <button class="btn" id="lic-viewonly">기록 보기만 하기</button>
+    </div>
+    <div class="status" id="lic-modal-status"></div>
+    <p class="hint">기록은 사라지지 않습니다 — 조회·검색·백업(내보내기)은 계속 가능하고,
+    새 통화 정리와 저장만 잠깁니다.</p>
+  </div>
+</div>
 
 <!-- 초기 설정 마법사 (최초 실행 시) -->
 <div id="onboard-modal" class="modal hidden">
@@ -1800,9 +1830,114 @@ fillForm(emptyFields());
 initSettings();
 renderList();
 checkShared();
+/* ══════════════ 이용권 (30일 무료 체험 + 이용코드) ══════════════ */
+// RSAR 라이선스 서버 웹 앱 URL — 판매자가 gs-license.js 로직을 배포한 뒤 여기에 고정.
+// 비어 있으면 기기 자체 판정(체험 30일 + 코드 형식 검사)으로 동작한다.
+const LICENSE_URL = "";
+const TRIAL_DAYS = 30;
+let viewOnlyMode = false;
+
+function ensureInstallMeta() {
+  let changed = false;
+  if (!settings.installAt) { settings.installAt = Date.now(); changed = true; }
+  if (!settings.deviceId) {
+    settings.deviceId = "d" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    changed = true;
+  }
+  if (changed) saveSettings(settings);
+}
+function trialStartTs() {
+  return Math.min(settings.installAt || Date.now(), settings.serverTrialStart || Infinity);
+}
+function licenseState() {
+  const now = Date.now();
+  if (settings.licenseUntil) {
+    const until = new Date(settings.licenseUntil + "T23:59:59").getTime();
+    if (now <= until) return { status: "active", until: settings.licenseUntil };
+  }
+  const end = trialStartTs() + TRIAL_DAYS * 86400000;
+  if (now < end) return { status: "trial", daysLeft: Math.max(1, Math.ceil((end - now) / 86400000)) };
+  return { status: "expired" };
+}
+// 반환: true 성공 / false 코드 무효 / null 네트워크 판단 불가
+async function verifyCode(raw) {
+  const code = (raw || "").trim().toUpperCase();
+  if (!code) return false;
+  if (!LICENSE_URL) { // 서버 연결 전 임시 검증 (형식만 확인, 1년 인정)
+    if (/^MT-[A-Z0-9-]{3,}$/.test(code)) {
+      settings.licenseCode = code;
+      settings.licenseUntil = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
+      saveSettings(settings);
+      return true;
+    }
+    return false;
+  }
+  try {
+    const p = new URLSearchParams({ action: "check", device: settings.deviceId, code });
+    const j = await (await fetch(LICENSE_URL + "?" + p)).json();
+    if (j.trialStart) settings.serverTrialStart = j.trialStart;
+    if (j.ok && j.license && j.license.valid) {
+      settings.licenseCode = code;
+      settings.licenseUntil = j.license.until;
+      saveSettings(settings);
+      return true;
+    }
+    saveSettings(settings);
+    return false;
+  } catch { return null; }
+}
+// 앱 시작 시 서버와 상태 동기화 (체험 시작일은 서버 기록이 우선)
+async function refreshLicense() {
+  if (!LICENSE_URL) return;
+  try {
+    const p = new URLSearchParams({ action: "check", device: settings.deviceId });
+    if (settings.licenseCode) p.set("code", settings.licenseCode);
+    const j = await (await fetch(LICENSE_URL + "?" + p)).json();
+    if (j.trialStart) settings.serverTrialStart = j.trialStart;
+    if (settings.licenseCode && j.license) {
+      settings.licenseUntil = j.license.valid ? j.license.until : ""; // 만료/회수 반영
+    }
+    saveSettings(settings);
+  } catch { /* 오프라인 — 마지막 상태 유지 */ }
+  applyLicenseUI();
+}
+function applyLicenseUI() {
+  const st = licenseState();
+  const n = el("lic-status");
+  n.className = "status show " + (st.status === "expired" ? "err" : st.status === "active" ? "ok" : "info");
+  n.textContent =
+    st.status === "active" ? `✅ 이용 중 — ${st.until}까지 (코드 ${settings.licenseCode || ""})`
+    : st.status === "trial" ? `🎁 무료 체험 중 — ${st.daysLeft}일 남음`
+    : "⛔ 체험 기간 종료 — 이용코드를 등록해 주세요.";
+  const locked = st.status === "expired";
+  ["btn-ai", "btn-save", "btn-mic", "btn-file"].forEach(id => { el(id).disabled = locked; });
+  el("license-modal").classList.toggle("hidden", !locked || viewOnlyMode);
+  return locked;
+}
+async function submitLicenseCode(inputId, statusId) {
+  showStatus(statusId, "info", "⏳ 코드 확인 중…");
+  const ok = await verifyCode(el(inputId).value);
+  if (ok) {
+    viewOnlyMode = false;
+    applyLicenseUI();
+    showStatus(statusId, "ok", "✅ 이용코드가 등록됐습니다 — 이용해 주셔서 감사합니다!");
+  } else if (ok === false) {
+    showStatus(statusId, "err", "코드가 올바르지 않거나 만료되었습니다. 코드를 다시 확인해 주세요.");
+  } else {
+    showStatus(statusId, "err", "확인 실패 — 인터넷 연결을 확인하고 다시 시도해 주세요.");
+  }
+}
+el("lic-submit").onclick = () => submitLicenseCode("lic-input", "lic-modal-status");
+el("lic-submit2").onclick = () => submitLicenseCode("lic-input2", "lic-status");
+el("lic-viewonly").onclick = () => {
+  viewOnlyMode = true;
+  el("license-modal").classList.add("hidden");
+};
+
 /* ══════════════ 초기 설정 마법사 ══════════════ */
 function maybeShowOnboarding() {
   if (settings.onboarded) return;
+  if (licenseState().status === "expired") return; // 잠금 화면이 우선
   if (new URLSearchParams(location.search).has("shared")) return; // 공유받은 녹음 처리 우선
   el("onboard-modal").classList.remove("hidden");
 }
@@ -1847,7 +1982,10 @@ el("ob-done").onclick = async () => {
   }
 };
 
-// 앱을 열 때: 미전송분 자동 업로드 → 동료가 보내준 매물 자동 수신
+// 앱을 열 때: 이용권 확인 → 마법사 → 미전송분 업로드 → 매물 자동 수신
+ensureInstallMeta();
+applyLicenseUI();
+refreshLicense();
 maybeShowOnboarding();
 flushSheetQueue().then(() => sheetPull(false));
 
