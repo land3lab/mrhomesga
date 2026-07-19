@@ -177,7 +177,6 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
 
 <!-- ── 목록 ─────────────────────────────── -->
 <section id="view-list">
-  <div class="status err" id="trial-banner" style="margin-bottom:10px"></div>
   <input type="search" id="search" placeholder="이름 · 연락처 · 단지 · 내용 검색">
   <div class="chips" id="filter-chips">
     <button data-cat="" class="on">전체</button>
@@ -599,21 +598,20 @@ function __scopes__() {
 
 </main>
 
-<!-- 이용권 만료 잠금 -->
+<!-- 이용권 안내 팝업 (체험 잔여 7일 전부터 · 잠금 없음) -->
 <div id="license-modal" class="modal hidden">
   <div class="modal-card">
-    <h2>🎫 무료 체험 기간이 끝났어요</h2>
-    <p>매통이 무료 체험 30일이 지났습니다. 계속 쓰시려면 이용코드를 등록해 주세요.<br>
-    <b>코드 문의: ☎ <a href="tel:028821009" style="color:inherit">02-882-1009</a> (Land3lab)</b></p>
+    <h2 id="lic-title">🔔 무료 체험 안내</h2>
+    <p id="lic-desc"></p>
+    <p style="margin:4px 0"><b>이용코드 문의: ☎ <a href="tel:028821009" style="color:inherit">02-882-1009</a> (Land3lab)</b></p>
     <input type="text" id="lic-input" placeholder="이용코드 입력 (예: MT-…)"
            autocomplete="off" style="text-transform:uppercase; margin-top:8px">
     <div class="btnbar">
       <button class="btn primary" id="lic-submit">코드 등록</button>
-      <button class="btn" id="lic-viewonly">기록 보기만 하기</button>
+      <button class="btn" id="lic-viewonly">나중에</button>
     </div>
     <div class="status" id="lic-modal-status"></div>
-    <p class="hint">기록은 사라지지 않습니다 — 조회·검색·백업(내보내기)은 계속 가능하고,
-    새 통화 정리와 저장만 잠깁니다.</p>
+    <p class="hint">지금은 계속 사용하실 수 있어요 — 이 안내는 이용코드 준비를 위한 알림입니다.</p>
   </div>
 </div>
 
@@ -1845,7 +1843,6 @@ checkShared();
 // 비어 있으면 기기 자체 판정(체험 30일 + 코드 형식 검사)으로 동작한다.
 const LICENSE_URL = "https://script.google.com/macros/s/AKfycbxbgE9aS3tKDrs_L8KNbWTtKfyQIr9jDtIc0UwdV9hPdHVY18T8FwTJ3ykKEfjBE2Nb/exec";
 const TRIAL_DAYS = 30;
-let viewOnlyMode = false;
 
 function ensureInstallMeta() {
   let changed = false;
@@ -1910,7 +1907,9 @@ async function refreshLicense() {
     saveSettings(settings);
   } catch { /* 오프라인 — 마지막 상태 유지 */ }
   applyLicenseUI();
+  if (el("onboard-modal").classList.contains("hidden")) maybeShowLicenseReminder();
 }
+// 상태 표시만 담당 — 앱을 잠그지 않는다 (하드락 제거, 안내는 팝업으로)
 function applyLicenseUI() {
   const st = licenseState();
   const n = el("lic-status");
@@ -1918,26 +1917,33 @@ function applyLicenseUI() {
   n.textContent =
     st.status === "active" ? `✅ 이용 중 — ${st.until}까지 (코드 ${settings.licenseCode || ""})`
     : st.status === "trial" ? `🎁 무료 체험 중 — ${st.daysLeft}일 남음`
-    : "⛔ 체험 기간 종료 — 이용코드를 등록해 주세요.";
-  const locked = st.status === "expired";
-  ["btn-ai", "btn-save", "btn-mic", "btn-file"].forEach(id => { el(id).disabled = locked; });
-  el("license-modal").classList.toggle("hidden", !locked || viewOnlyMode);
-  // 체험 종료 임박(7일 이하) 안내 배너 — 갑자기 잠기는 일이 없도록 미리 알림
-  const banner = el("trial-banner");
-  if (st.status === "trial" && st.daysLeft <= 7) {
-    banner.className = "status show err";
-    banner.textContent = `🎁 무료 체험이 ${st.daysLeft}일 남았어요 — 계속 쓰시려면 이용코드를 준비해 주세요 (⚙️ 설정 → 🎫 이용권, 문의: ☎ 02-882-1009 Land3lab)`;
-  } else {
-    banner.className = "status";
-  }
-  return locked;
+    : "🔔 무료 체험 종료 — 계속 쓰시려면 이용코드를 등록해 주세요.";
+}
+
+// 잔여 7일 전부터(그리고 종료 후) 유료전환 안내를 팝업으로 1회 표시
+let licenseReminderShown = false;
+function maybeShowLicenseReminder() {
+  if (licenseReminderShown) return;
+  const st = licenseState();
+  const near = (st.status === "trial" && st.daysLeft <= 7) || st.status === "expired";
+  if (!near) return;
+  licenseReminderShown = true;
+  el("lic-title").textContent = st.status === "expired"
+    ? "🔔 무료 체험이 끝났어요"
+    : `🔔 무료 체험이 ${st.daysLeft}일 남았어요`;
+  el("lic-desc").textContent = st.status === "expired"
+    ? "그동안 잘 써보셨나요? 계속 이용하시려면 이용코드를 등록해 주세요. 기록은 그대로 있어요."
+    : "체험이 곧 끝나요. 계속 이용하시려면 미리 이용코드를 준비해 주세요.";
+  el("lic-input").value = "";
+  hideStatus("lic-modal-status");
+  el("license-modal").classList.remove("hidden");
 }
 async function submitLicenseCode(inputId, statusId) {
   showStatus(statusId, "info", "⏳ 코드 확인 중…");
   const ok = await verifyCode(el(inputId).value);
   if (ok) {
-    viewOnlyMode = false;
     applyLicenseUI();
+    el("license-modal").classList.add("hidden"); // 등록됐으면 안내 팝업 닫기
     showStatus(statusId, "ok", "✅ 이용코드가 등록됐습니다 — 이용해 주셔서 감사합니다!");
   } else if (ok === false) {
     showStatus(statusId, "err", "코드가 올바르지 않거나 만료되었습니다. 코드를 다시 확인해 주세요.");
@@ -1948,14 +1954,12 @@ async function submitLicenseCode(inputId, statusId) {
 el("lic-submit").onclick = () => submitLicenseCode("lic-input", "lic-modal-status");
 el("lic-submit2").onclick = () => submitLicenseCode("lic-input2", "lic-status");
 el("lic-viewonly").onclick = () => {
-  viewOnlyMode = true;
-  el("license-modal").classList.add("hidden");
+  el("license-modal").classList.add("hidden"); // 나중에 — 그냥 닫기 (잠금 없음)
 };
 
 /* ══════════════ 초기 설정 마법사 ══════════════ */
 function maybeShowOnboarding() {
   if (settings.onboarded) return;
-  if (licenseState().status === "expired") return; // 잠금 화면이 우선
   if (new URLSearchParams(location.search).has("shared")) return; // 공유받은 녹음 처리 우선
   el("onboard-modal").classList.remove("hidden");
 }
@@ -2003,8 +2007,10 @@ el("ob-done").onclick = async () => {
 // 앱을 열 때: 이용권 확인 → 마법사 → 미전송분 업로드 → 매물 자동 수신
 ensureInstallMeta();
 applyLicenseUI();
-refreshLicense();
 maybeShowOnboarding();
+// 온보딩 팝업이 없을 때만 이용권 안내 팝업을 띄운다 (팝업 중첩 방지)
+if (el("onboard-modal").classList.contains("hidden")) maybeShowLicenseReminder();
+refreshLicense();
 flushSheetQueue().then(() => sheetPull(false));
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
