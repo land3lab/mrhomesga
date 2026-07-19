@@ -107,6 +107,9 @@ function handleGet(e) {
   }
 
   // 연결 테스트: 시트 주소 반환 (판매자 본인 확인용)
+  // 이때 [코드]/[기기] 탭을 미리 만들어 둔다 — 판매자가 시트를 열면 바로 장부 구조가 보이도록
+  getTab_(ss, TAB_CODES, CODE_HEADERS);
+  getTab_(ss, TAB_DEVICES, DEV_HEADERS);
   return json_({ ok: true, sheet: ss.getUrl() });
 }
 
