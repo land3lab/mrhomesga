@@ -244,7 +244,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
       <button class="btn primary" id="lic-submit2" style="flex:0 0 auto">등록</button>
     </div>
     <p class="hint">설치 후 30일은 무료 체험입니다. 이후에는 이용코드가 필요해요 —
-    코드 문의: <b>RSAR Land3 관악센터</b>.</p>
+    코드 문의: <b>☎ 02-882-1009 (Land3lab)</b>.</p>
   </div>
 
   <div class="card">
@@ -604,7 +604,7 @@ function __scopes__() {
   <div class="modal-card">
     <h2>🎫 무료 체험 기간이 끝났어요</h2>
     <p>매통이 무료 체험 30일이 지났습니다. 계속 쓰시려면 이용코드를 등록해 주세요.<br>
-    <b>코드 문의: RSAR Land3 관악센터</b></p>
+    <b>코드 문의: ☎ <a href="tel:028821009" style="color:inherit">02-882-1009</a> (Land3lab)</b></p>
     <input type="text" id="lic-input" placeholder="이용코드 입력 (예: MT-…)"
            autocomplete="off" style="text-transform:uppercase; margin-top:8px">
     <div class="btnbar">
@@ -1926,7 +1926,7 @@ function applyLicenseUI() {
   const banner = el("trial-banner");
   if (st.status === "trial" && st.daysLeft <= 7) {
     banner.className = "status show err";
-    banner.textContent = `🎁 무료 체험이 ${st.daysLeft}일 남았어요 — 계속 쓰시려면 이용코드를 준비해 주세요 (⚙️ 설정 → 🎫 이용권, 문의: RSAR Land3 관악센터)`;
+    banner.textContent = `🎁 무료 체험이 ${st.daysLeft}일 남았어요 — 계속 쓰시려면 이용코드를 준비해 주세요 (⚙️ 설정 → 🎫 이용권, 문의: ☎ 02-882-1009 Land3lab)`;
   } else {
     banner.className = "status";
   }
