@@ -65,6 +65,10 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 pageLoaded = true
+                // 웹 화면에 "자동 감지 켜짐" 표시를 위해 네이티브 실행 상태를 알린다
+                webView.evaluateJavascript(
+                    "window.__nativeMonitoring && window.__nativeMonitoring(true)", null
+                )
                 flushPendingAudio()
             }
 
@@ -108,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         requestNeededPermissions()
+        MonitorService.start(this) // "매통이 실행 중" 지속 알림 + 프로세스 유지 시작
         webView.loadUrl(APP_URL)
         handleIntent(intent)
     }

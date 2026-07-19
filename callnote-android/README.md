@@ -22,6 +22,8 @@
 |---|---|
 | `app/src/main/java/.../MainActivity.kt` | WebView + 권한 요청 + 녹음 파일을 웹으로 주입(JS 브릿지) + 공유 수신 |
 | `.../CallReceiver.kt` | 전화 상태 브로드캐스트 수신 — 통화 종료 감지 |
+| `.../MonitorService.kt` | "매통이 실행 중" 지속 알림(포그라운드 서비스) — 실행 상태 표시 + 프로세스 유지 |
+| `.../BootReceiver.kt` | 기기 부팅 완료 시 감지 서비스 자동 시작 (BOOT_COMPLETED) |
 | `.../RecordingCheckWorker.kt` | 통화 종료 6초 뒤 미디어저장소에서 새 통화 녹음 탐색 |
 | `.../NotifyHelper.kt` | "정리할까요?" 알림 생성 |
 | `release-key.jks` | APK 서명 키 (아래 보안 주의 참고) |

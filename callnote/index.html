@@ -61,6 +61,10 @@ header {
 header .brand { display: flex; align-items: center; gap: 8px; }
 header h1 { font-size: 17px; margin: 0; }
 header .brand small { color: var(--muted); font-weight: normal; font-size: 12px; }
+header .brand #monitor-badge {
+  margin-left: auto; font-size: 11px; font-weight: 700; color: var(--accent);
+  background: var(--accent-soft); border-radius: 999px; padding: 3px 9px; white-space: nowrap;
+}
 nav.tabs { display: flex; gap: 4px; margin-top: 8px; }
 nav.tabs button {
   flex: 1; border: none; background: none; color: var(--muted);
@@ -165,6 +169,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
     <img src="icons/icon-192.png" alt="매통이" style="height:30px; border-radius:7px">
     <h1>매통이</h1>
     <small>Land3lab · 매물·통화 자동정리</small>
+    <span id="monitor-badge" class="hidden" title="통화 종료를 자동으로 감지하고 있어요">🟢 자동 감지 켜짐</span>
   </div>
   <nav class="tabs">
     <button id="tab-list" class="on">📋 목록</button>
@@ -569,6 +574,12 @@ function __scopes__() {
           다시 추가해서 새 코드를 보내야 합니다.</li>
         <li><b>기록이 사라졌어요</b> → 브라우저 데이터(캐시/사이트 데이터)를 지우면 폰 안의
           기록이 지워집니다. 시트에 올라가 있던 기록은 <b>[🔄 시트에서 받기]</b>로 복구됩니다.</li>
+        <li><b>"매통이 실행 중" 알림이 계속 떠 있어요</b> → 정상입니다. 통화 종료를 자동 감지하려면
+          앱이 켜져 있어야 해서, 실행 중임을 알리는 알림이에요 (이게 있으면 부팅 후에도 자동 감지가 됩니다).
+          헤더에 <b>🟢 자동 감지 켜짐</b>이 보이면 정상 동작 중이라는 뜻입니다.</li>
+        <li><b>재부팅 후 자동 감지가 안 돼요</b> → 폰 설정 → 애플리케이션 → 매통이 → 권한에서
+          "자동 실행/백그라운드 실행"을 허용하고, 배터리를 "제한 없음"으로 두세요.
+          (일부 기종은 최적화 앱 목록에서 매통이를 제외해야 부팅 자동 시작이 유지됩니다)</li>
         <li><b>새 기능이 안 보여요</b> → 앱을 완전히 닫았다가(최근 앱에서 밀어서 제거) 다시 열어보세요.</li>
         <li><b>사장 폰을 바꿨어요</b> → 아래 [🔑 사장 폰을 바꿨을 때] 참고.</li>
       </ul>
@@ -1807,6 +1818,10 @@ function applyCallerInfo() {
 
 window.__nativeCallInfo = (phone, callType, contactName) => {
   callerInfo = { phone: phone || "", callType: callType || "", contactName: contactName || "" };
+};
+// 안드로이드 앱이 감지 서비스 실행 중임을 알리면 헤더에 "자동 감지 켜짐" 표시
+window.__nativeMonitoring = (on) => {
+  el("monitor-badge").classList.toggle("hidden", !on);
 };
 window.__nativeShareBegin = (name, mime) => { nativeShare = { name, mime, parts: [] }; };
 window.__nativeShareChunk = (b64) => { if (nativeShare) nativeShare.parts.push(b64); };
