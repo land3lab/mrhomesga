@@ -177,6 +177,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
 
 <!-- ── 목록 ─────────────────────────────── -->
 <section id="view-list">
+  <div class="status err" id="trial-banner" style="margin-bottom:10px"></div>
   <input type="search" id="search" placeholder="이름 · 연락처 · 단지 · 내용 검색">
   <div class="chips" id="filter-chips">
     <button data-cat="" class="on">전체</button>
@@ -1921,6 +1922,14 @@ function applyLicenseUI() {
   const locked = st.status === "expired";
   ["btn-ai", "btn-save", "btn-mic", "btn-file"].forEach(id => { el(id).disabled = locked; });
   el("license-modal").classList.toggle("hidden", !locked || viewOnlyMode);
+  // 체험 종료 임박(7일 이하) 안내 배너 — 갑자기 잠기는 일이 없도록 미리 알림
+  const banner = el("trial-banner");
+  if (st.status === "trial" && st.daysLeft <= 7) {
+    banner.className = "status show err";
+    banner.textContent = `🎁 무료 체험이 ${st.daysLeft}일 남았어요 — 계속 쓰시려면 이용코드를 준비해 주세요 (⚙️ 설정 → 🎫 이용권, 문의: RSAR Land3 관악센터)`;
+  } else {
+    banner.className = "status";
+  }
   return locked;
 }
 async function submitLicenseCode(inputId, statusId) {
