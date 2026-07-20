@@ -166,12 +166,87 @@ class MainActivity : AppCompatActivity() {
                     intent.getParcelableExtra(Intent.EXTRA_STREAM)
                 }
                 if (uri != null) {
-                    pendingAudio = uri to (queryDisplayName(uri) ?: "통화녹음.m4a")
+                    val fname = queryDisplayName(uri) ?: "통화녹음.m4a"
+                    pendingAudio = uri to fname
+                    // 공유받은 녹음도 통화기록에서 상대 번호를 찾아 채운다
+                    // (파일명 시각 → 그 무렵 통화 매칭. 실패 시 웹의 파일명 파서가 보완)
+                    pendingCall = findCallByRecording(fname, uri)
                     flushPendingAudio()
                 }
             }
         }
     }
+
+    /** 녹음 파일의 시각(파일명 타임스탬프 또는 파일 수정시각)에 가장 가까운 통화기록을 찾는다. */
+    private fun findCallByRecording(fname: String, uri: Uri): CallInfo? {
+        val ts = parseTimestamp(fname) ?: fileModifiedTime(uri) ?: return null
+        try {
+            contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                arrayOf(
+                    android.provider.CallLog.Calls.NUMBER,
+                    android.provider.CallLog.Calls.TYPE,
+                    android.provider.CallLog.Calls.CACHED_NAME,
+                    android.provider.CallLog.Calls.DATE,
+                    android.provider.CallLog.Calls.DURATION,
+                ),
+                "${android.provider.CallLog.Calls.DATE} BETWEEN ? AND ?",
+                arrayOf((ts - 6 * 60 * 60 * 1000).toString(), (ts + 5 * 60 * 1000).toString()),
+                "${android.provider.CallLog.Calls.DATE} DESC",
+            )?.use { c ->
+                var best: CallInfo? = null
+                var bestDiff = Long.MAX_VALUE
+                while (c.moveToNext()) {
+                    val date = c.getLong(3)
+                    val dur = c.getLong(4) * 1000 // 통화 시간(ms)
+                    // 통화 시작~(종료+5분) 사이에 녹음 시각이 들어오면 그 통화로 본다
+                    val diff = when {
+                        ts in date..(date + dur + 5 * 60 * 1000) -> 0
+                        else -> kotlin.math.abs(ts - date)
+                    }
+                    if (diff < bestDiff) {
+                        bestDiff = diff
+                        val type = when (c.getInt(1)) {
+                            android.provider.CallLog.Calls.INCOMING_TYPE -> "수신"
+                            android.provider.CallLog.Calls.OUTGOING_TYPE -> "발신"
+                            else -> ""
+                        }
+                        best = CallInfo(c.getString(0) ?: "", type, c.getString(2) ?: "")
+                    }
+                    if (bestDiff == 0L) break
+                }
+                if (best != null && best.number.isNotBlank() && bestDiff <= 30 * 60 * 1000) return best
+            }
+        } catch (_: SecurityException) {
+        }
+        return null
+    }
+
+    /** "…251015_143022…" / "…2025-10-15 14-30-22…" 형태의 파일명에서 시각(ms)을 뽑는다. */
+    private fun parseTimestamp(name: String): Long? {
+        val patterns = listOf(
+            Regex("(20\\d{2})[-_.]?(\\d{2})[-_.]?(\\d{2})[ _T]?(\\d{2})[-_.:]?(\\d{2})[-_.:]?(\\d{2})"),
+            Regex("(\\d{2})(\\d{2})(\\d{2})[_ ](\\d{2})(\\d{2})(\\d{2})"),
+        )
+        for (re in patterns) {
+            val m = re.find(name) ?: continue
+            return try {
+                val g = m.groupValues
+                var year = g[1].toInt(); if (year < 100) year += 2000
+                val cal = java.util.Calendar.getInstance()
+                cal.set(year, g[2].toInt() - 1, g[3].toInt(), g[4].toInt(), g[5].toInt(), g[6].toInt())
+                cal.set(java.util.Calendar.MILLISECOND, 0)
+                cal.timeInMillis
+            } catch (_: Exception) { null }
+        }
+        return null
+    }
+
+    private fun fileModifiedTime(uri: Uri): Long? = try {
+        contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DATE_MODIFIED), null, null, null)?.use {
+            if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) * 1000 else null
+        }
+    } catch (_: Exception) { null }
 
     private fun queryDisplayName(uri: Uri): String? = try {
         contentResolver.query(uri, null, null, null, null)?.use { c ->
