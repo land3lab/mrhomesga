@@ -1791,8 +1791,7 @@ function undoLastSave() {
   const hasSheet = !!(settings.sheetUrl || "").trim();
   if (snap.isNew) {
     records = records.filter(r => r.id !== snap.savedId);
-    saveRecords(records);
-    if (hasSheet) { addPendingDelete(snap.savedId); flushSheetQueue(); }
+    saveRecords(records); // 시트는 건드리지 않는다 — 취소해도 이미 올라간 시트 행은 시트에서 직접 지워 주세요
   } else {
     const rec = records.find(r => r.id === snap.savedId);
     if (rec) {
@@ -1811,14 +1810,9 @@ function undoLastSave() {
 
 function doDelete() {
   if (!editingId) return;
-  if (!confirm("이 상담 기록을 삭제할까요?")) return;
-  const removed = records.find(r => r.id === editingId);
+  if (!confirm("이 상담 기록을 이 기기에서 삭제할까요?\n(구글시트 매물장에는 그대로 남습니다)")) return;
   records = records.filter(r => r.id !== editingId);
-  saveRecords(records);
-  if (removed && (settings.sheetUrl || "").trim()) {
-    addPendingDelete(removed.id); // 시트에서도 제거 — 실패 시 다음 기회에 자동 재시도
-    flushSheetQueue();
-  }
+  saveRecords(records); // 시트는 건드리지 않는다 — 앱(이 기기) 목록에서만 제거
   clearDraft();
   hasUnsavedChanges = false;
   renderList();
@@ -2273,12 +2267,9 @@ async function flushSheetQueue() {
   sheetFlushing = true;
   let sent = 0;
   try {
-    const remaining = [];
-    for (const id of pendingDeletes()) {
-      const ok = await sheetSync({ id, createdAt: 0, updatedAt: 0, fields: emptyFields(), transcript: "" }, "delete");
-      ok ? sent++ : remaining.push(id);
-    }
-    localStorage.setItem(LS_DELETES, JSON.stringify(remaining));
+    // 삭제는 시트로 전파하지 않는다 — 앱 삭제는 이 기기 목록에서만, 구글시트 매물장은 영구 보존.
+    // (구버전에서 쌓였을 수 있는 대기 삭제 목록도 시트로 보내지 않고 비운다)
+    if (pendingDeletes().length) localStorage.setItem(LS_DELETES, "[]");
     for (const r of records) {
       if (r.syncedAt && r.syncedAt >= (r.updatedAt || r.createdAt)) continue; // 이미 최신 상태로 전송됨
       if (await sheetSync(r, "upsert")) sent++;
@@ -2535,14 +2526,11 @@ el("btn-demo").onclick = () => {
 el("btn-demo-clear").onclick = () => {
   const demos = records.filter(r => typeof r.id === "string" && r.id.startsWith("demo"));
   if (!demos.length) { showStatus("backup-status", "info", "지울 예시 데이터가 없습니다."); return; }
-  if (!confirm(`예시(테스트) 데이터 ${demos.length}건을 모두 지울까요?\n실제로 저장한 매물은 그대로 남습니다.`)) return;
-  const sheetOn = !!(settings.sheetUrl || "").trim();
-  demos.forEach(r => { if (sheetOn) addPendingDelete(r.id); });
+  if (!confirm(`예시(테스트) 데이터 ${demos.length}건을 이 기기에서 지울까요?\n실제로 저장한 매물은 그대로 남습니다.\n(구글시트에 이미 올라간 예시 행은 시트에서 직접 지워 주세요)`)) return;
   records = records.filter(r => !(typeof r.id === "string" && r.id.startsWith("demo")));
-  saveRecords(records);
+  saveRecords(records); // 시트는 건드리지 않는다 — 앱(이 기기) 목록에서만 제거
   renderList();
-  if (sheetOn) flushSheetQueue();
-  showStatus("backup-status", "ok", `🧹 예시 데이터 ${demos.length}건을 지웠습니다${sheetOn ? " — 구글시트에서도 제거 중입니다." : "."}`);
+  showStatus("backup-status", "ok", `🧹 예시 데이터 ${demos.length}건을 앱에서 지웠습니다. (구글시트 매물장은 그대로 유지)`);
 };
 
 /* ══════════════ 상태 메시지 ══════════════ */
