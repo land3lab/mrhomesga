@@ -263,8 +263,8 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px
       <input type="password" id="api-key" placeholder="AIza…" autocomplete="off">
       <button class="btn" id="key-toggle" style="flex:0 0 auto">👁</button>
     </div>
-    <label class="f" for="model">모델 (기본값 권장)</label>
-    <input type="text" id="model" placeholder="gemini-2.5-flash">
+    <label class="f" for="model">모델 (비워두면 자동 선택 권장)</label>
+    <input type="text" id="model" placeholder="자동 (gemini-flash-latest 등에서 선택)">
     <div class="btnbar"><button class="btn primary" id="btn-save-settings">저장</button></div>
     <div class="status" id="settings-status"></div>
     <p class="hint">키는 이 기기 브라우저(localStorage)에만 저장됩니다. [AI 자동 정리]를 누를 때만
@@ -1032,34 +1032,61 @@ function geminiSchema(withTranscript) {
   return { type: "OBJECT", properties: p, required: ["category", "summary"] };
 }
 
+// 구글이 모델을 수시로 바꾸므로 고정하지 않고 자동 대체한다.
+// 지정 모델이 404/미지원이면 다음 후보로 넘어가고, 성공한 모델을 기억한다.
+const MODEL_FALLBACKS = [
+  "gemini-flash-latest",   // 항상 최신 flash를 가리키는 별칭 (권장 기본)
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.0-flash-001",
+];
+
 async function callGemini(parts, withTranscript) {
   const key = (settings.apiKey || "").trim();
   if (!key) throw new Error("NO_KEY");
-  const model = (settings.model || "").trim() || "gemini-2.5-flash";
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: "application/json",
-          responseSchema: geminiSchema(withTranscript),
-        },
-      }),
+  const tryList = [];
+  const add = m => { m = (m || "").trim(); if (m && !tryList.includes(m)) tryList.push(m); };
+  add(settings.model);        // 사용자가 직접 지정한 모델 우선
+  add(settings.workingModel); // 지난번에 잘 됐던 모델
+  MODEL_FALLBACKS.forEach(add);
+
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts }],
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: "application/json",
+      responseSchema: geminiSchema(withTranscript),
+    },
+  });
+
+  let lastErr = "알 수 없는 오류";
+  for (const model of tryList) {
+    let res;
+    try {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body }
+      );
+    } catch { throw new Error("네트워크 오류 — 인터넷 연결을 확인해 주세요."); }
+
+    if (res.ok) {
+      const data = await res.json();
+      const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
+      if (!text) throw new Error("AI 응답이 비어 있습니다. 잠시 후 다시 시도해 주세요.");
+      if (settings.workingModel !== model) { settings.workingModel = model; saveSettings(settings); }
+      return JSON.parse(text);
     }
-  );
-  if (!res.ok) {
-    let msg = `API 오류 (HTTP ${res.status})`;
-    try { msg += ": " + ((await res.json()).error?.message || "").slice(0, 200); } catch {}
-    throw new Error(msg);
+
+    let emsg = "";
+    try { emsg = (await res.json()).error?.message || ""; } catch {}
+    lastErr = `HTTP ${res.status}` + (emsg ? ": " + emsg.slice(0, 160) : "");
+    // 모델이 없거나 못 쓰는 경우만 다음 후보로. 키·권한·한도 문제면 즉시 중단.
+    const modelIssue = res.status === 404 ||
+      /not found|not available|no longer|unsupported|not supported|does not exist/i.test(emsg);
+    if (!modelIssue) break;
   }
-  const data = await res.json();
-  const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
-  if (!text) throw new Error("AI 응답이 비어 있습니다. 잠시 후 다시 시도해 주세요.");
-  return JSON.parse(text);
+  throw new Error(lastErr + " — 설정에서 모델명을 바꾸거나(비워두면 자동), 잠시 후 다시 시도해 주세요.");
 }
 
 function callerContext() {
