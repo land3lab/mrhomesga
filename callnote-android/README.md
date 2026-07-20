@@ -70,3 +70,5 @@ cd callnote-android && gradle :app:assembleRelease
 ```
 
 <!-- 빌드 트리거: 2026-07-17 릴리스 게시 재시도 -->
+
+<!-- build retry: v1.5 release re-trigger after GitHub outage -->
