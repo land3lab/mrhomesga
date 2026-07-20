@@ -16,9 +16,14 @@
 
 var FILE_NAME = "매통이 매물 접수장"; // 드라이브에 자동 생성될 시트 파일 이름
 var SHEET_NAME = "통화노트"; // ⚠️ 기존 사용자 시트의 탭 이름 — 바꾸면 호환이 깨진다
+// ⚠️ 호환성 규칙: 기존 사용자 시트는 이미 이 순서로 헤더/데이터가 저장되어 있다.
+// 새 컬럼은 반드시 배열 맨 끝에만 추가할 것 — 중간 삽입·삭제·순서 변경 시 기존 시트의
+// 모든 열이 밀려 데이터가 엉키게 된다. (ensureHeaders_가 기존 시트의 헤더 행을 자동으로
+// 이 길이까지 늘려주지만, 이미 있던 컬럼의 자리는 절대 바꾸지 않는다)
 var HEADERS = ["id", "통화일시", "구분", "이름", "연락처", "고객유형", "물건종류", "거래유형",
   "주소/단지", "매매가", "보증금", "월세", "면적", "층", "방/욕실", "입주일", "희망조건",
-  "특이사항", "할일", "요약", "통화내용", "수정일시"];
+  "특이사항", "할일", "요약", "통화내용", "수정일시",
+  "계약일", "잔금일", "구비서류", "계약메모"]; // 2026-07 계약진행 상세 필드 추가
 
 // 시트에서 만든 스크립트면 그 시트를, 독립 스크립트면 자동 생성한 시트를 사용
 function getSpreadsheet_() {
@@ -32,6 +37,17 @@ function getSpreadsheet_() {
   var created = SpreadsheetApp.create(FILE_NAME);
   props.setProperty("ssid", created.getId());
   return created;
+}
+
+// 기존 시트의 헤더 행이 최신 HEADERS보다 짧으면(구버전 시트) 모자란 만큼만 뒤에 이어붙인다.
+// 기존 컬럼의 위치·데이터는 절대 건드리지 않는다 — 라벨(1행)만 보강.
+function ensureHeaders_(sh) {
+  if (sh.getLastRow() === 0) return;
+  var lastCol = sh.getLastColumn();
+  if (lastCol < HEADERS.length) {
+    var missing = HEADERS.slice(lastCol);
+    sh.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+  }
 }
 
 function json_(obj) {
@@ -141,6 +157,7 @@ function handlePost(e) {
     var ss = getSpreadsheet_();
     var sh = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
     if (sh.getLastRow() === 0) sh.appendRow(HEADERS);
+    else ensureHeaders_(sh); // 기존 시트에 신규 컬럼 헤더 라벨만 안전하게 보강 (기존 컬럼 자리는 그대로)
     var ids = sh.getRange(1, 1, sh.getLastRow(), 1).getValues();
     var rowIdx = 0;
     for (var i = 0; i < ids.length; i++) {
