@@ -601,7 +601,13 @@ function __scopes__() {
       <button class="btn" id="btn-export">⬇️ 내보내기 (JSON)</button>
       <button class="btn" id="btn-import">⬆️ 가져오기</button>
     </div>
-    <input type="file" id="import-input" accept=".json,application/json" class="hidden">
+    <!-- accept를 열어 두어 어떤 파일앱에서도 JSON이 보이게 함 -->
+    <input type="file" id="import-input" accept="*/*" class="hidden">
+    <p class="hint">가져오기에서 파일이 안 보이면: 파일앱 우상단 필터를 끄거나, 카톡/다운로드에서
+    JSON 파일을 먼저 저장한 뒤 선택하세요. 아래 [🧪 예시 데이터]로 파일 없이 바로 테스트할 수도 있어요.</p>
+    <div class="btnbar" style="margin-top:2px">
+      <button class="btn" id="btn-demo">🧪 예시 데이터 넣기 (테스트용)</button>
+    </div>
     <div class="status" id="backup-status"></div>
   </div>
 
@@ -1790,6 +1796,48 @@ el("import-input").onchange = async (e) => {
   } catch (err) {
     showStatus("backup-status", "err", "가져오기 실패 — 매통이에서 내보낸 JSON 파일인지 확인해 주세요.");
   }
+};
+
+// 파일 없이 앱에서 바로 테스트용 예시 데이터를 만든다 (테스트 전용)
+el("btn-demo").onclick = () => {
+  if (!confirm("예시(테스트) 상담 기록 30건을 넣을까요?\n실제 매물과 섞이니 테스트 후 삭제하세요.\n구글시트를 연결했다면 시트에도 올라갑니다.")) return;
+  const 성 = "김이박최정강조윤장임한오서신권황안송전홍고문양손배백유".split("");
+  const 이름 = "민준서준도윤예준시우하준지호주원지훈현우서연지우하은민서지유윤서채원수아영수정호민아수지태오지현가영".match(/.{2}/g);
+  const 동 = ["봉천동", "신림동", "서원동", "낙성대동", "청룡동", "은천동", "인헌동", "남현동", "행운동", "대학동"];
+  const 단지 = ["두산아파트", "관악푸르지오", "벽산블루밍", "e편한세상", "관악산휴먼시아", "봉천우성", "신림현대", "래미안", "힐스테이트", "자이"];
+  const cats = ["매물접수", "매물접수", "손님문의", "손님문의", "계약진행", "기타"];
+  const pts = ["아파트", "아파트", "오피스텔", "빌라/다세대", "상가"];
+  const deals = ["매매", "전세", "월세", "반전세"];
+  const feats = ["올수리 완료", "남향", "주차 2대", "역세권", "확장형", "풀옵션", "초품아", "즉시입주"];
+  const fus = ["집 보여주기 약속", "등기부 확인", "광고 등록", "가격 조정 확인", "문자 발송", "계약서 작성", "잔금일 협의"];
+  const R = a => a[Math.floor(Math.random() * a.length)];
+  const eok = () => `${2 + Math.floor(Math.random() * 11)}억${Math.random() < .5 ? " " + R(["2천", "5천", "8천"]) : ""}`;
+  const phone = () => `010-${1000 + Math.floor(Math.random() * 9000)}-${1000 + Math.floor(Math.random() * 9000)}`;
+  const now = Date.now();
+  let added = 0;
+  for (let i = 0; i < 30; i++) {
+    const cat = R(cats), pt = R(pts), deal = R(deals), dong = R(동);
+    const created = now - Math.floor(Math.random() * 40) * 86400000 - Math.floor(Math.random() * 20) * 3600000;
+    const f = emptyFields();
+    Object.assign(f, {
+      category: cat, name: R(성) + R(이름), phone: phone(), propertyType: pt, dealType: deal,
+      area: R(["18평", "24평", "32평", "34평", "42평"]), floor: `${1 + Math.floor(Math.random() * 20)}층`,
+      rooms: R(["방1 욕1", "방2 욕1", "방3 욕2", "원룸"]), moveIn: R(["즉시", "협의", "10월 초", "12월 중순"]),
+      features: [R(feats), R(feats)], followUps: [R(fus)],
+    });
+    if (cat === "매물접수" || cat === "계약진행") { f.role = R(["매도인", "임대인", "세입자"]); f.address = `${dong} ${R(단지)} ${101 + Math.floor(Math.random() * 15)}동`; }
+    else if (cat === "손님문의") { f.role = R(["매수 희망", "임차 희망"]); f.needs = `${dong} ${pt} ${deal} 찾음`; }
+    if (deal === "매매") f.priceSale = eok();
+    else if (deal === "전세") f.priceDeposit = eok();
+    else { f.priceDeposit = `${1 + Math.floor(Math.random() * 8)}천`; f.priceMonthly = `${40 + Math.floor(Math.random() * 200)}만원`; }
+    f.summary = `${dong} ${pt} ${deal} ${f.priceSale || f.priceDeposit} ${cat}`;
+    const rObj = { id: "demo" + created + i, createdAt: created, updatedAt: created, fields: f, transcript: `${dong} ${pt} ${deal} 상담 예시 데이터입니다.` };
+    records.push(rObj); added++;
+    sheetSync(rObj, "upsert");
+  }
+  saveRecords(records);
+  renderList();
+  showStatus("backup-status", "ok", `🧪 예시 데이터 ${added}건을 넣었습니다 — 목록에서 확인하세요. (테스트 후 각 기록에서 삭제)`);
 };
 
 /* ══════════════ 상태 메시지 ══════════════ */
