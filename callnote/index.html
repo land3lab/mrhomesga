@@ -419,7 +419,8 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
       <p class="hint"><b>스피커폰 통화 중 실시간 받아쓰기</b> — 전화를 스피커폰으로 전환한 뒤
         [🎙 바로 받아쓰기]를 누르면 대화가 실시간 텍스트로 쌓입니다 (마이크 성능에 따라 인식률 차이 있음,
         중요한 통화는 녹음 파일 방식을 권장 — 안드로이드 Chrome에서 가장 잘 동작).</p>
-      <p class="hint"><b>파일 용량 제한</b> — 녹음 파일은 20MB까지 가능합니다. 통화가 아주 길면 나눠서 올려주세요.</p>
+      <p class="hint"><b>파일 용량 제한</b> — 녹음 파일은 200MB까지 가능합니다 (통화가 길어 파일이 커도
+      자동으로 먼저 업로드한 뒤 정리하므로 대부분의 통화는 문제없어요). 그래도 넘으면 통화를 나눠서 올려주세요.</p>
     </details>
 
     <label class="f" for="transcript" style="margin-top:14px">통화 내용 (받아쓰기 결과 / 직접 입력·붙여넣기)</label>
@@ -833,8 +834,9 @@ function __scopes__() {
           ③ 배터리가 "제한 없음"인지 ④ 앱을 강제 종료하지 않았는지 확인.
           급하면 녹음 파일을 <b>공유 → 매통이</b>로 보내도 똑같이 동작합니다.</li>
         <li><b>[AI 자동 정리]가 실패해요</b> → 오류 문구를 읽어보세요:
-          키 관련이면 [🔑 AI 키 발급]의 오류 항목 참고, 파일이 20MB 초과면 통화를 나눠서,
-          그 외엔 인터넷 연결 확인 후 다시 시도.</li>
+          키 관련이면 [🔑 AI 키 발급]의 오류 항목 참고, 파일이 200MB 초과면 통화를 나눠서,
+          큰 파일(12MB 이상)은 먼저 업로드하는 과정이 있어 와이파이가 없으면 시간이 더 걸릴 수 있으니 인터넷 연결을 확인하고,
+          그 외엔 잠시 후 다시 시도.</li>
         <li><b>시트에 안 올라가요</b> → ⚙️ 설정의 <b>[🔍 연결 테스트]</b>를 누르면 원인을
           알려줍니다. 대부분 ① URL이 /exec가 아님 ② 배포 시 "모든 사용자"가 아님
           ③ 코드 수정 후 "새 버전" 재배포 안 함 중 하나입니다.</li>
@@ -1500,9 +1502,18 @@ el("btn-direct").onclick = () => {
   el("transcript").scrollIntoView({ behavior: "smooth", block: "center" });
 };
 
+// Gemini에 파일을 보내는 두 가지 방식:
+// - 인라인(base64): 요청 전체가 약 20MB를 넘으면 API가 거부한다. base64는 원본보다 약 33% 커지므로
+//   원본 파일 기준 INLINE_MAX_BYTES까지만 이 방식을 쓴다 (짧은 통화 — 업로드 왕복 없이 빠름).
+// - Files API 업로드: 통화가 길어 파일이 커지면(예전엔 20MB 넘으면 무조건 오류) 먼저 업로드하고
+//   그 파일을 참조만 하므로 최대 2GB까지 가능하다 — 실제로 몇 시간짜리 통화도 충분히 처리된다.
+const INLINE_MAX_BYTES = 12 * 1024 * 1024;
+const FILE_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
+
 function setPendingAudio(file) {
-  if (file.size > 19 * 1024 * 1024) {
-    showStatus("ai-status", "err", `파일이 너무 큽니다 (${(file.size / 1048576).toFixed(1)}MB). 20MB 이하만 가능해요 — 통화가 아주 길면 나눠서 올려주세요.`);
+  if (file.size > FILE_UPLOAD_MAX_BYTES) {
+    showStatus("ai-status", "err",
+      `파일이 너무 큽니다 (${(file.size / 1048576).toFixed(1)}MB). ${(FILE_UPLOAD_MAX_BYTES / 1048576).toFixed(0)}MB 이하만 가능해요 — 통화가 아주 길면 나눠서 올려주세요.`);
     return;
   }
   pendingAudio = file;
@@ -1514,9 +1525,11 @@ function setPendingAudio(file) {
   el("file-name").textContent = `${file.name} (${(file.size / 1048576).toFixed(1)}MB)`;
   el("file-chip").classList.add("show");
   const gotNo = callerInfo && callerInfo.phone;
+  const big = file.size > INLINE_MAX_BYTES;
   showStatus("ai-status", "info",
     "녹음 파일 준비 완료" + (gotNo ? ` — 파일명에서 번호(${callerInfo.phone})도 찾았어요.` : "") +
-    " [🤖 AI 자동 정리]를 누르면 받아쓰기와 정리를 한 번에 합니다.");
+    (big ? " 파일이 커서 업로드에 시간이 좀 걸릴 수 있어요." : "") +
+    " [✨ AI로 상담카드 만들기]를 누르면 받아쓰기와 정리를 한 번에 합니다.");
 }
 function clearPendingAudio() {
   pendingAudio = null;
@@ -1536,6 +1549,59 @@ function fileToBase64(file) {
     r.onerror = rej;
     r.readAsDataURL(file);
   });
+}
+
+// 큰 녹음 파일은 Gemini Files API로 먼저 업로드하고, 그 파일을 "참조"만 해서 정리 요청을 보낸다.
+// (구글의 표준 재개 가능 업로드 프로토콜 — 인라인 base64와 달리 요청 크기 제한(~20MB)이 없다)
+async function uploadAudioToGemini(file, apiKey, mimeType) {
+  const startRes = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(file.size),
+        "X-Goog-Upload-Header-Content-Type": mimeType,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ file: { display_name: (file.name || "recording").slice(0, 100) } }),
+    }
+  );
+  if (!startRes.ok) {
+    let msg = "";
+    try { msg = (await startRes.json()).error?.message || ""; } catch {}
+    throw new Error(`녹음 파일 업로드 시작 실패 (HTTP ${startRes.status})` + (msg ? `: ${msg.slice(0, 160)}` : ""));
+  }
+  const uploadUrl = startRes.headers.get("x-goog-upload-url");
+  if (!uploadUrl) throw new Error("녹음 파일 업로드 주소를 받지 못했습니다 — 잠시 후 다시 시도해 주세요.");
+
+  const finalizeRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Length": String(file.size),
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize",
+    },
+    body: file,
+  });
+  if (!finalizeRes.ok) throw new Error(`녹음 파일 업로드 실패 (HTTP ${finalizeRes.status})`);
+  const info = await finalizeRes.json();
+  const f = info.file || info;
+  let state = f.state, uri = f.uri;
+  for (let tries = 0; state === "PROCESSING" && tries < 30; tries++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${f.name}?key=${encodeURIComponent(apiKey)}`);
+      const checkInfo = await checkRes.json();
+      state = checkInfo.state;
+      uri = checkInfo.uri;
+    } catch { break; }
+  }
+  if (state !== "ACTIVE") throw new Error("녹음 파일 처리가 지연되고 있습니다 — 잠시 후 다시 시도해 주세요.");
+  // 다 쓴 원격 파일은 굳이 붙잡아둘 필요 없음 — 실패해도(권한 등) 결과에는 영향 없으므로 조용히 무시
+  const cleanup = () => fetch(`https://generativelanguage.googleapis.com/v1beta/${f.name}?key=${encodeURIComponent(apiKey)}`, { method: "DELETE" }).catch(() => {});
+  return { fileUri: uri, mimeType: f.mimeType || mimeType, cleanup };
 }
 
 /* ══════════════ Gemini AI 정리 ══════════════ */
@@ -1662,6 +1728,7 @@ function hideAiSteps() { el("ai-steps").classList.remove("show"); el("ai-steps")
 function friendlyAiError(err) {
   const msg = (err && err.message) || String(err);
   if (msg === "NO_KEY") return { friendly: "Gemini API 키가 없습니다. [⚙️ 설정] 탭에서 키를 먼저 등록해 주세요 (1분, 무료).", detail: "" };
+  if (/녹음 파일 업로드|녹음 파일 처리/.test(msg)) return { friendly: "녹음 파일 업로드에 실패했습니다. 파일이 큰 경우 와이파이가 있는 곳에서 다시 시도해 보세요.", detail: msg };
   if (/네트워크 오류/.test(msg)) return { friendly: "인터넷 연결을 확인한 뒤 다시 시도해 주세요.", detail: msg };
   return { friendly: "AI 정리에 실패했습니다. 통화 내용을 다시 확인하거나 잠시 후 다시 시도해 주세요.", detail: msg };
 }
@@ -1689,11 +1756,23 @@ el("btn-ai").onclick = async () => {
     let result;
     if (pendingAudio) {
       renderAiSteps(steps, 1);
-      const b64 = await fileToBase64(pendingAudio);
-      result = await callGemini([
-        { text: PROMPT + PROMPT_AUDIO_EXTRA + callerContext() + (text ? `\n\n참고 메모:\n${text}` : "") },
-        { inlineData: { mimeType: guessMime(pendingAudio), data: b64 } },
-      ], true);
+      const mimeType = guessMime(pendingAudio);
+      const promptText = PROMPT + PROMPT_AUDIO_EXTRA + callerContext() + (text ? `\n\n참고 메모:\n${text}` : "");
+      if (pendingAudio.size > INLINE_MAX_BYTES) {
+        // 큰 파일: 먼저 업로드하고 그 파일을 참조해서 정리 요청 (인라인 방식의 ~20MB 제한을 우회)
+        const uploaded = await uploadAudioToGemini(pendingAudio, (settings.apiKey || "").trim(), mimeType);
+        result = await callGemini([
+          { text: promptText },
+          { fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.fileUri } },
+        ], true);
+        uploaded.cleanup();
+      } else {
+        const b64 = await fileToBase64(pendingAudio);
+        result = await callGemini([
+          { text: promptText },
+          { inlineData: { mimeType, data: b64 } },
+        ], true);
+      }
       if (result.transcript) el("transcript").value = result.transcript;
       renderAiSteps(steps, 2);
     } else {
