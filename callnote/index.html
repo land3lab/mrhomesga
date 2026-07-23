@@ -1637,6 +1637,41 @@ async function callGemini(parts, withTranscript) {
   throw new Error(lastErr + " — 설정에서 모델명을 바꾸거나(비워두면 자동), 잠시 후 다시 시도해 주세요.");
 }
 
+// 통화가 길어 녹음 파일이 크면 base64로 요청에 실을 때 약 20MB 한도를 넘겨 실패한다(폰 메모리도 부담).
+// 이럴 땐 Gemini Files API에 먼저 업로드하고 파일 URL만 참조한다 (최대 2GB·오디오 약 9.5시간, 48시간 보관).
+// multipart/related 단일 요청이라 응답 헤더를 따로 읽을 필요가 없어 브라우저/웹뷰에서 안전하다.
+async function uploadAudioToGemini(file, key, onProgress) {
+  const base = "https://generativelanguage.googleapis.com";
+  const mime = guessMime(file);
+  const boundary = "maetong" + Date.now() + Math.random().toString(36).slice(2);
+  const meta = JSON.stringify({ file: { display_name: (file.name || "call-recording").slice(0, 100) } });
+  const pre = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+              `--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`;
+  const body = new Blob([pre, file, `\r\n--${boundary}--`], { type: `multipart/related; boundary=${boundary}` });
+
+  let res;
+  try {
+    res = await fetch(`${base}/upload/v1beta/files?uploadType=multipart&key=${encodeURIComponent(key)}`,
+      { method: "POST", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body });
+  } catch { throw new Error("네트워크 오류 — 인터넷 연결을 확인해 주세요."); }
+  if (!res.ok) {
+    let emsg = ""; try { emsg = (await res.json()).error?.message || ""; } catch {}
+    throw new Error(`녹음 파일 업로드 실패 (HTTP ${res.status})` + (emsg ? ": " + emsg.slice(0, 160) : ""));
+  }
+  let f = (await res.json()).file;
+  if (!f || !f.uri) throw new Error("업로드 응답이 올바르지 않습니다.");
+  // 오디오는 처리(PROCESSING)에 잠깐 걸릴 수 있다 — ACTIVE가 될 때까지 최대 약 90초 대기
+  let tries = 0;
+  while (f.state === "PROCESSING" && tries < 45) {
+    if (onProgress) onProgress();
+    await new Promise(r => setTimeout(r, 2000));
+    try { const st = await fetch(`${base}/v1beta/${f.name}?key=${encodeURIComponent(key)}`); if (st.ok) f = await st.json(); } catch {}
+    tries++;
+  }
+  if (f.state === "FAILED") throw new Error("업로드한 녹음 파일을 처리하지 못했습니다.");
+  return { mimeType: mime, fileUri: f.uri };
+}
+
 function callerContext() {
   if (!callerInfo || !callerInfo.phone) return "";
   let s = `\n\n참고정보 — 통화 상대방 전화번호(전화기 기록): ${callerInfo.phone}`;
@@ -1689,10 +1724,31 @@ el("btn-ai").onclick = async () => {
     let result;
     if (pendingAudio) {
       renderAiSteps(steps, 1);
-      const b64 = await fileToBase64(pendingAudio);
+      const key = (settings.apiKey || "").trim();
+      const INLINE_MAX = 12 * 1024 * 1024; // 이보다 크면 Files API로 업로드 (요청 본문 20MB 한도·메모리 회피)
+      let audioPart;
+      if (pendingAudio.size > INLINE_MAX) {
+        const mb = (pendingAudio.size / 1048576).toFixed(0);
+        showStatus("ai-status", "info", `⏳ 통화가 길어 녹음(${mb}MB)을 먼저 업로드하는 중이에요 — 잠시만 기다려 주세요.`);
+        try {
+          const up = await uploadAudioToGemini(pendingAudio, key);
+          audioPart = { fileData: { mimeType: up.mimeType, fileUri: up.fileUri } };
+          hideStatus("ai-status");
+        } catch (upErr) {
+          // 업로드가 막히는 환경이면 20MB 미만은 인라인으로 한 번 더 시도
+          if (pendingAudio.size < 19 * 1024 * 1024) {
+            const b64 = await fileToBase64(pendingAudio);
+            audioPart = { inlineData: { mimeType: guessMime(pendingAudio), data: b64 } };
+            hideStatus("ai-status");
+          } else { throw upErr; }
+        }
+      } else {
+        const b64 = await fileToBase64(pendingAudio);
+        audioPart = { inlineData: { mimeType: guessMime(pendingAudio), data: b64 } };
+      }
       result = await callGemini([
         { text: PROMPT + PROMPT_AUDIO_EXTRA + callerContext() + (text ? `\n\n참고 메모:\n${text}` : "") },
-        { inlineData: { mimeType: guessMime(pendingAudio), data: b64 } },
+        audioPart,
       ], true);
       if (result.transcript) el("transcript").value = result.transcript;
       renderAiSteps(steps, 2);
