@@ -198,6 +198,16 @@ button.icon-btn {
 }
 .filechip.show { display: flex; }
 .filechip button { margin-left: auto; border: none; background: none; color: inherit; font-size: 16px; cursor: pointer; width: 32px; height: 32px; }
+.inbox { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 11px; background: var(--card); }
+.inbox.hidden { display: none; }
+.inbox-head { font-size: 13.5px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.inbox-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.inbox-row:first-child { border-top: none; }
+.inbox-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.inbox-info b { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inbox-info span { font-size: 12px; color: var(--muted); }
+.inbox-row .btn { flex: none; padding: 6px 12px; }
+.inbox-row .inbox-del { padding: 6px 10px; }
 .interim { color: var(--muted); font-size: 13.5px; font-style: italic; min-height: 1.2em; }
 details.guide { border-top: 1px solid var(--line); padding: 10px 0 2px; }
 details.guide summary { cursor: pointer; font-weight: 700; font-size: 14.5px; padding: 8px 0; min-height: 24px; }
@@ -360,6 +370,10 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
 
 <!-- ── 목록 ─────────────────────────────── -->
 <section id="view-list" role="tabpanel" aria-labelledby="tab-list">
+  <div class="inbox hidden" id="inbox-panel">
+    <div class="inbox-head">📥 정리 안 한 통화 녹음 <span id="inbox-count"></span> — 아래에서 골라 정리하세요</div>
+    <div id="inbox-list"></div>
+  </div>
   <input type="search" id="search" placeholder="이름 · 연락처 · 단지 · 내용 검색" aria-label="기록 검색">
   <div class="chips" id="filter-chips">
     <button data-cat="" class="on">전체</button>
@@ -419,7 +433,10 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
       <p class="hint"><b>스피커폰 통화 중 실시간 받아쓰기</b> — 전화를 스피커폰으로 전환한 뒤
         [🎙 바로 받아쓰기]를 누르면 대화가 실시간 텍스트로 쌓입니다 (마이크 성능에 따라 인식률 차이 있음,
         중요한 통화는 녹음 파일 방식을 권장 — 안드로이드 Chrome에서 가장 잘 동작).</p>
-      <p class="hint"><b>파일 용량 제한</b> — 녹음 파일은 20MB까지 가능합니다. 통화가 아주 길면 나눠서 올려주세요.</p>
+      <p class="hint"><b>긴 통화도 OK</b> — 통화가 길어 녹음이 커도 자동 업로드로 처리합니다(최대 약 200MB).</p>
+      <p class="hint"><b>정리 대기함</b> — 바로 정리하지 않아도 받은 녹음은 홈(목록) 화면 위쪽
+        <b>📥 정리 안 한 통화 녹음</b> 목록에 쌓입니다. 연속으로 전화가 와도 이전 녹음이 사라지지 않으니,
+        나중에 목록에서 골라 정리하세요.</p>
     </details>
 
     <label class="f" for="transcript" style="margin-top:14px">통화 내용 (받아쓰기 결과 / 직접 입력·붙여넣기)</label>
@@ -1351,6 +1368,7 @@ function openEdit(id) {
   stopMic();
   editingId = id;
   callerInfo = null;
+  currentInboxId = null; // 새 편집을 시작하면 대기함 연결 해제 (저장 시 잘못 지워지지 않도록)
   clearPendingAudio();
   hideStatus("ai-status"); hideStatus("save-status");
   hideAiSteps();
@@ -1493,7 +1511,15 @@ function stopMic() {
 
 /* ══════════════ 녹음 파일 ══════════════ */
 el("btn-file").onclick = () => el("file-input").click();
-el("file-input").onchange = (e) => { if (e.target.files[0]) setPendingAudio(e.target.files[0]); e.target.value = ""; };
+el("file-input").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  const caller = callerFromFilename(f.name);
+  currentInboxId = await inboxAdd(f, caller); // 대기함에도 보관해 유실 방지
+  if (caller && (caller.phone || caller.contactName) && (!callerInfo || (!callerInfo.phone && !callerInfo.contactName))) callerInfo = caller;
+  setPendingAudio(f);
+  applyCallerInfo();
+};
 el("file-clear").onclick = clearPendingAudio;
 el("btn-direct").onclick = () => {
   el("transcript").focus();
@@ -1501,8 +1527,8 @@ el("btn-direct").onclick = () => {
 };
 
 function setPendingAudio(file) {
-  if (file.size > 19 * 1024 * 1024) {
-    showStatus("ai-status", "err", `파일이 너무 큽니다 (${(file.size / 1048576).toFixed(1)}MB). 20MB 이하만 가능해요 — 통화가 아주 길면 나눠서 올려주세요.`);
+  if (file.size > 200 * 1024 * 1024) {
+    showStatus("ai-status", "err", `파일이 너무 큽니다 (${(file.size / 1048576).toFixed(0)}MB). 200MB 이하 녹음만 가능해요.`);
     return;
   }
   pendingAudio = file;
@@ -1521,6 +1547,111 @@ function setPendingAudio(file) {
 function clearPendingAudio() {
   pendingAudio = null;
   el("file-chip").classList.remove("show");
+}
+
+/* ══════════════ 정리 대기함 (받은 통화 녹음 보관·선택) ══════════════
+   통화를 바로 정리하지 않아도 다음 전화 녹음에 덮어쓰이지 않도록, 받은 녹음을
+   IndexedDB에 쌓아두고 목록에서 골라 정리한다. (여러 통의 연속 통화도 모두 보관) */
+let inboxItems = [];       // 화면용 메타데이터(blob 제외) — 최신순
+let currentInboxId = null; // 지금 폼에 불러온 대기함 항목 (저장되면 대기함에서 제거)
+let justReceivedId = null; // 방금 도착해 "지금 정리?" 물어본 항목
+
+function idbOpen() {
+  return new Promise((res, rej) => {
+    let rq;
+    try { rq = indexedDB.open("callnote-audio", 1); } catch (e) { rej(e); return; }
+    rq.onupgradeneeded = () => {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains("inbox")) db.createObjectStore("inbox", { keyPath: "id" });
+    };
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbAll() {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction("inbox", "readonly").objectStore("inbox").getAll();
+    rq.onsuccess = () => res(rq.result || []);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbGet(id) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction("inbox", "readonly").objectStore("inbox").get(id);
+    rq.onsuccess = () => res(rq.result || null);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbPut(rec) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("inbox", "readwrite");
+    tx.objectStore("inbox").put(rec);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbDel(id) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("inbox", "readwrite");
+    tx.objectStore("inbox").delete(id);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+}
+
+async function inboxRefresh() {
+  try {
+    const all = await idbAll();
+    inboxItems = all.map(r => ({ id: r.id, name: r.name, mime: r.mime, size: r.size,
+      receivedAt: r.receivedAt, phone: r.phone, contactName: r.contactName }))
+      .sort((a, b) => b.receivedAt - a.receivedAt);
+  } catch { inboxItems = []; }
+  renderInbox();
+}
+function renderInbox() {
+  const panel = el("inbox-panel"), list = el("inbox-list");
+  if (!panel) return;
+  if (!inboxItems.length) { panel.classList.add("hidden"); list.innerHTML = ""; return; }
+  el("inbox-count").textContent = `${inboxItems.length}건`;
+  list.innerHTML = inboxItems.map(it => {
+    const who = it.phone || it.contactName || it.name || "통화 녹음";
+    const sub = `${fmtDate(it.receivedAt)} · ${(it.size / 1048576).toFixed(1)}MB`;
+    return `<div class="inbox-row">
+      <div class="inbox-info"><b>${esc(who)}</b><span>${esc(sub)}</span></div>
+      <button class="btn primary inbox-go" data-id="${esc(it.id)}">정리</button>
+      <button class="btn inbox-del" data-id="${esc(it.id)}" aria-label="이 녹음 삭제">✕</button>
+    </div>`;
+  }).join("");
+  panel.classList.remove("hidden");
+  list.querySelectorAll(".inbox-go").forEach(b => b.onclick = () => inboxLoadToForm(b.dataset.id));
+  list.querySelectorAll(".inbox-del").forEach(b => b.onclick = () => inboxDelete(b.dataset.id));
+}
+async function inboxAdd(file, caller) {
+  const id = "rec" + Date.now() + Math.random().toString(36).slice(2, 7);
+  const rec = { id, name: file.name || "통화녹음.m4a", mime: file.type || guessMime(file), size: file.size,
+    receivedAt: Date.now(), phone: (caller && caller.phone) || "", contactName: (caller && caller.contactName) || "", blob: file };
+  try { await idbPut(rec); } catch { /* 저장 실패해도 이후 흐름은 진행 */ }
+  await inboxRefresh();
+  return id;
+}
+async function inboxDelete(id) {
+  if (!confirm("정리하지 않은 이 통화 녹음을 지울까요?")) return;
+  try { await idbDel(id); } catch {}
+  if (currentInboxId === id) currentInboxId = null;
+  await inboxRefresh();
+}
+async function inboxLoadToForm(id) {
+  let rec; try { rec = await idbGet(id); } catch {}
+  if (!rec || !rec.blob) { showStatus("ai-status", "err", "녹음을 불러오지 못했습니다 — 다시 시도해 주세요."); await inboxRefresh(); return; }
+  const file = new File([rec.blob], rec.name, { type: rec.mime });
+  openEdit(null); // 이 통화용 새 카드 시작
+  if (rec.phone || rec.contactName) callerInfo = { phone: rec.phone, callType: "", contactName: rec.contactName };
+  currentInboxId = id;
+  setPendingAudio(file);
+  applyCallerInfo();
+  el("btn-ai").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function guessMime(file) {
@@ -1814,6 +1945,13 @@ function doSave() {
     lastSaveSnapshot = { isNew: true, savedId: saved.id };
   }
   saveRecords(records);
+  // 대기함에서 불러와 정리한 녹음이면, 저장 완료 시 대기함에서 제거
+  if (currentInboxId) {
+    const doneId = currentInboxId; currentInboxId = null;
+    idbDel(doneId).catch(() => {});
+    inboxItems = inboxItems.filter(x => x.id !== doneId);
+    renderInbox();
+  }
   clearDraft();
   hasUnsavedChanges = false;
   renderList();
@@ -2626,13 +2764,19 @@ async function checkShared() {
   } catch (e) { /* 캐시 접근 불가 환경이면 조용히 무시 */ }
 }
 
-el("share-yes").onclick = () => {
+el("share-yes").onclick = async () => {
   el("share-modal").classList.add("hidden");
+  if (justReceivedId) { const id = justReceivedId; justReceivedId = null; await inboxLoadToForm(id); }
   el("btn-ai").click();
 };
 el("share-no").onclick = () => {
   el("share-modal").classList.add("hidden");
-  showStatus("ai-status", "info", "준비되어 있어요 — 언제든 [🤖 AI 자동 정리]를 누르면 됩니다.");
+  if (justReceivedId) {
+    justReceivedId = null;
+    showToast("📥 정리 대기함에 저장했어요.\n홈(목록) 화면 위쪽 목록에서 언제든 정리할 수 있어요.");
+  } else {
+    showStatus("ai-status", "info", "준비되어 있어요 — 언제든 [🤖 AI 자동 정리]를 누르면 됩니다.");
+  }
 };
 
 /* ══════════════ 네이티브 안드로이드 앱 브릿지 ══════════════
@@ -2762,25 +2906,23 @@ el("btn-status-check").onclick = async () => {
 };
 window.__nativeShareBegin = (name, mime) => { nativeShare = { name, mime, parts: [] }; };
 window.__nativeShareChunk = (b64) => { if (nativeShare) nativeShare.parts.push(b64); };
-window.__nativeShareEnd = () => {
+window.__nativeShareEnd = async () => {
   if (!nativeShare) return;
+  const share = nativeShare; nativeShare = null;
   try {
-    const bin = atob(nativeShare.parts.join(""));
+    const bin = atob(share.parts.join(""));
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const keepCaller = callerInfo; // openEdit이 초기화하므로 보관
-    openEdit(null);
-    callerInfo = keepCaller;
-    applyCallerInfo(); // 걸려온/건 번호를 연락처 칸에 미리 채움
-    setPendingAudio(new File([bytes], nativeShare.name || "통화녹음.m4a", { type: nativeShare.mime || "audio/mp4" }));
-    if (pendingAudio) { // 크기 초과 등으로 거부되지 않았을 때만 팝업
-      el("share-modal-desc").textContent = `"${pendingAudio.name}" 녹음을 AI가 받아쓰고 상담 카드로 정리할까요?`;
-      el("share-modal").classList.remove("hidden");
-    }
+    const file = new File([bytes], share.name || "통화녹음.m4a", { type: share.mime || "audio/mp4" });
+    // 걸려온 번호(통화기록) 우선, 없으면 파일명에서 추출
+    const caller = (callerInfo && (callerInfo.phone || callerInfo.contactName)) ? callerInfo : callerFromFilename(file.name);
+    // 무조건 대기함에 먼저 보관 — 편집 중이던 내용이나 이전 녹음을 절대 덮어쓰지 않는다
+    justReceivedId = await inboxAdd(file, caller);
+    const who = (caller && (caller.phone || caller.contactName)) || file.name;
+    el("share-modal-desc").textContent = `"${who}" 통화 녹음이 도착했어요. 지금 AI로 정리할까요?\n(나중에 정리 대기함에서 골라도 됩니다)`;
+    el("share-modal").classList.remove("hidden");
   } catch (e) {
     showStatus("ai-status", "err", "녹음 파일을 불러오지 못했습니다 — 다시 시도해 주세요.");
-  } finally {
-    nativeShare = null;
   }
 };
 
@@ -2790,6 +2932,7 @@ initSettings();
 renderList();
 checkShared();
 refreshConnSummary();
+inboxRefresh(); // 지난번에 정리 안 하고 남겨둔 통화 녹음 대기함 복원
 /* ══════════════ 이용권 (30일 무료 체험 + 이용코드) ══════════════ */
 // RSAR 라이선스 서버 웹 앱 URL — 판매자(RSAR)의 '매통이 라이선스' 시트와 연결됨.
 // 비어 있으면 기기 자체 판정(체험 30일 + 코드 형식 검사)으로 동작한다.
