@@ -2,17 +2,17 @@
   {
     "name": "본오동",
     "newAptName": "그랑시티자이",
-    "newAptPrice": 87000,
-    "newAptPy": 2837,
+    "newAptPrice": 86500,
+    "newAptPy": 2820,
     "jeonseNew": 60000,
     "dongAptName": "우성",
-    "dongAptPrice": 56000,
-    "dongAptPy": 1455,
+    "dongAptPrice": 50000,
+    "dongAptPy": 1947,
     "jeonseDong": 33500,
     "rebuildAptName": "월드",
-    "rebuildAptPrice": 47000,
-    "rebuildAptPy": 2592,
-    "stores": 3451,
-    "autoUpdatedAt": "2026-07-13"
+    "rebuildAptPrice": 38000,
+    "rebuildAptPy": 2346,
+    "stores": 3576,
+    "autoUpdatedAt": "2026-08-01"
   }
 ]
