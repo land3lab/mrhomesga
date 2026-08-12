@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jaegundoongi20260715",
+  "compatibility_date": "2026-07-23",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "callnote"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}

@@ -11,3 +11,9 @@ dongne/station_raw.xlsx
 dongne/seoul_ridership_raw.xlsx
 dongne/korail_ridership_raw.xlsx
 dongne/*_raw.csv
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
