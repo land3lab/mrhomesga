@@ -208,6 +208,12 @@ button.icon-btn {
 .inbox-info span { font-size: 12px; color: var(--muted); }
 .inbox-row .btn { flex: none; padding: 6px 12px; }
 .inbox-row .inbox-del { padding: 6px 10px; }
+.rec-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+.ract { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 700;
+  padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg);
+  color: inherit; text-decoration: none; cursor: pointer; line-height: 1; }
+.ract.call { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
+.ract.kko { background: #fee500; color: #191600; border-color: transparent; }
 .interim { color: var(--muted); font-size: 13.5px; font-style: italic; min-height: 1.2em; }
 details.guide { border-top: 1px solid var(--line); padding: 10px 0 2px; }
 details.guide summary { cursor: pointer; font-weight: 700; font-size: 14.5px; padding: 8px 0; min-height: 24px; }
@@ -1195,8 +1201,21 @@ function visibleRecords() {
   return list;
 }
 
+// 저장된 연락처 문자열에서 걸/받은 첫 번째 전화번호만 뽑아 tel/sms용 숫자로
+function primaryPhone(str) {
+  const m = String(str || "").match(/01[0-9][-. ]?\d{3,4}[-. ]?\d{4}|0\d{1,2}[-. ]?\d{3,4}[-. ]?\d{4}/);
+  return m ? m[0].replace(/[^0-9+]/g, "") : "";
+}
+// 문자·카톡에 채워 보낼 기본 인사말 (기록 내용 기반, 상대가 수정 가능)
+function msgTemplate(r) {
+  const f = r.fields || {};
+  const subject = f.address || f.summary || [f.propertyType, f.dealType].filter(Boolean).join(" ");
+  const hi = f.name ? `${f.name}님, 안녕하세요.` : "안녕하세요.";
+  return subject ? `${hi} ${subject} 건으로 연락드립니다.` : `${hi} 지난 통화 관련해 연락드립니다.`;
+}
 function recCardHtml(r) {
   const f = r.fields;
+  const tel = primaryPhone(f.phone);
   const prices = [f.priceSale && "매매 " + f.priceSale,
     f.priceDeposit && "보증금 " + f.priceDeposit,
     f.priceMonthly && "월세 " + f.priceMonthly].filter(Boolean);
@@ -1218,6 +1237,11 @@ function recCardHtml(r) {
       ${prices.length ? `<div class="price">${esc(prices.join(" · "))}</div>` : ""}
       ${f.summary ? `<div class="sum">${esc(f.summary)}</div>` : ""}
       ${todo.length ? `<div class="todo">☑️ ${esc(todo[0])}${todo.length > 1 ? ` 외 ${todo.length - 1}건` : ""}</div>` : ""}
+      ${!shareMode && tel ? `<div class="rec-actions">
+        <a class="ract call" href="tel:${esc(tel)}" onclick="event.stopPropagation()">📞 전화</a>
+        <a class="ract" href="sms:${esc(tel)}?body=${encodeURIComponent(msgTemplate(r))}" onclick="event.stopPropagation()">💬 문자</a>
+        <button class="ract kko" data-msg="${r.id}" onclick="event.stopPropagation()">💛 카톡·공유</button>
+      </div>` : ""}
     </div>`;
 }
 
@@ -1274,6 +1298,21 @@ function renderList() {
       r.starred = !r.starred;
       saveRecords(records);
       renderList();
+    };
+  });
+  // 💛 카톡·공유 — 휴대폰 공유창을 열어 카카오톡 등으로 메시지 전달 (미지원 시 복사)
+  box.querySelectorAll("[data-msg]").forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const r = records.find(x => x.id === btn.dataset.msg);
+      if (!r) return;
+      const text = msgTemplate(r);
+      if (navigator.share) {
+        try { await navigator.share({ text }); } catch (err) { /* 사용자 취소 등은 무시 */ }
+      } else {
+        try { await navigator.clipboard.writeText(text); showToast("💛 메시지를 복사했어요 — 카카오톡을 열어 붙여넣으면 됩니다."); }
+        catch { prompt("아래 메시지를 복사해 카카오톡에 붙여넣으세요", text); }
+      }
     };
   });
 }
