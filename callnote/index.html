@@ -534,10 +534,14 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
   </div>
 
   <div class="card">
-    <h2>💬 문자·카톡 인사말 서명</h2>
-    <p class="hint" style="margin-top:0">기록에서 [💬 문자]·[💛 카톡·공유]로 보낼 때 메시지 끝에 붙는 서명이에요.
-      비워두면 서명 없이 보냅니다.</p>
-    <input type="text" id="msg-signature" placeholder="예) 관악공인중개사 김철수 ☎ 02-882-1009" autocomplete="off">
+    <h2>💬 문자·카톡 인사말 (사무소 정보)</h2>
+    <p class="hint" style="margin-top:0">기록에서 [💬 문자]·[💛 카톡·공유]로 보낼 때 메시지에 자동으로 붙는 사무소 정보예요.
+      여러 줄로 넣을 수 있고, 머릿말(앞)/꼬리말(뒤) 위치를 고르세요. 비우면 붙지 않습니다.</p>
+    <div class="chips" id="sig-pos-chips" style="margin:2px 0 8px">
+      <button data-pos="tail" class="on">꼬리말 (메시지 뒤)</button>
+      <button data-pos="head">머릿말 (메시지 앞)</button>
+    </div>
+    <textarea id="msg-signature" rows="6" placeholder="예)&#10;미스터홈즈 부동산중개 관악센터&#10;서울특별시 관악로 6길 99&#10;대표 길문수&#10;☎ 02-882-1009 / 010-2611-7548"></textarea>
     <div class="btnbar"><button class="btn primary" id="btn-save-sig">저장</button></div>
     <div class="status" id="sig-status" role="status" aria-live="polite"></div>
   </div>
@@ -1224,7 +1228,8 @@ function msgTemplate(r) {
   const hi = f.name ? `${f.name}님, 안녕하세요.` : "안녕하세요.";
   const body = subject ? `${hi} ${subject} 건으로 연락드립니다.` : `${hi} 지난 통화 관련해 연락드립니다.`;
   const sig = (settings.msgSignature || "").trim();
-  return sig ? `${body}\n- ${sig}` : body;
+  if (!sig) return body;
+  return settings.msgSignaturePos === "head" ? `${sig}\n\n${body}` : `${body}\n\n${sig}`;
 }
 // 전화·문자·카톡 버튼 (목록 카드와 편집화면에서 공용)
 function contactActionsHtml(r) {
@@ -2146,6 +2151,8 @@ function initSettings() {
   el("sheet-url").value = settings.sheetUrl || "";
   el("sheet-key-input").value = settings.staffCode || "";
   el("msg-signature").value = settings.msgSignature || "";
+  const sigPos = settings.msgSignaturePos === "head" ? "head" : "tail";
+  el("sig-pos-chips").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.pos === sigPos));
   renderContacts();
   applyRoleUI();
 }
@@ -2157,10 +2164,17 @@ function persistSettings() {
   settings.msgSignature = el("msg-signature").value.trim();
   saveSettings(settings);
 }
+el("sig-pos-chips").querySelectorAll("button").forEach(b => b.onclick = () => {
+  settings.msgSignaturePos = b.dataset.pos;
+  el("sig-pos-chips").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.pos === settings.msgSignaturePos));
+  saveSettings(settings);
+  renderList();
+});
 el("btn-save-sig").onclick = () => {
   persistSettings();
   renderList(); // 카드의 문자 링크 미리보기 갱신
-  showStatus("sig-status", "ok", settings.msgSignature ? "저장되었습니다 — 문자·카톡에 서명이 붙습니다." : "저장되었습니다 — 서명 없이 보냅니다.");
+  const pos = settings.msgSignaturePos === "head" ? "머릿말(앞)" : "꼬리말(뒤)";
+  showStatus("sig-status", "ok", settings.msgSignature ? `저장되었습니다 — 사무소 정보가 ${pos}로 붙습니다.` : "저장되었습니다 — 사무소 정보 없이 보냅니다.");
 };
 
 /* ── 역할(사장/직원)과 접근 키 ── */
