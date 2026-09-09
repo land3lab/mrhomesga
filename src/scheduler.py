@@ -1,38 +1,58 @@
 """
 APScheduler 기반 자동화 스케줄러.
-매일 설정된 시각(KST)에 파이프라인 실행:
-  뉴스 수집 → 필터 → 콘텐츠 생성 → 카드뉴스 → 블로그/Instagram 발행
+
+파이프라인은 2단계로 분리되어 있습니다 (회사 정책상 대외 발행은 담당자 승인 필요):
+
+  1) run_pipeline()   — 매일 설정된 시각(KST)에 실행.
+     뉴스 수집 → 필터 → 콘텐츠 생성 → 카드뉴스/블로그 이미지 생성 →
+     output/pending/<date>/manifest.json 에 "초안"으로 저장. 실제 SNS/블로그
+     발행 API는 호출하지 않음.
+
+  2) publish_pending(date) — 담당자가 output/pending/<date>/ 를 검토한 뒤
+     `python main.py --publish <date>` 로 수동 실행. 이때 비로소 Tistory /
+     Instagram / Threads / Facebook 에 실제로 게시됨.
 """
 
 import json
 import logging
 import traceback
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import pytz
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 import config
-from src.news.fetcher import fetch_all_news
+from src.news.fetcher import fetch_all_news, NewsItem
 from src.news.filter import filter_news, top_items
-from src.content.generator import generate_blog_post
+from src.content.generator import GeneratedContent, generate_blog_post
 from src.content.card_news import create_card_news
+from src.content.blog_images import create_blog_images
 from src.publishers.blog import TistoryPublisher
 from src.publishers.instagram import InstagramPublisher
+from src.publishers.threads import ThreadsPublisher
+from src.publishers.facebook import FacebookPublisher
 
 logger = logging.getLogger(__name__)
 KST = pytz.timezone("Asia/Seoul")
 
+PENDING_DIR = config.OUTPUT_DIR / "pending"
+PUBLISHED_DIR = config.OUTPUT_DIR / "published"
+
+
+# ── 1단계: 초안 생성 ──────────────────────────────────────────────────────────
 
 def run_pipeline() -> dict:
     """
-    전체 파이프라인 1회 실행.
+    뉴스 수집 → 콘텐츠 생성 → 이미지 생성까지 수행하고 초안을 저장.
+    실제 SNS/블로그 발행은 하지 않는다 (담당자 승인 후 --publish 로 별도 실행).
     반환: 실행 결과 요약 dict.
     """
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M KST")
-    logger.info("═══ 파이프라인 시작: %s ═══", now)
+    logger.info("═══ 초안 생성 파이프라인 시작: %s ═══", now)
     result: dict = {"started_at": now, "steps": {}}
 
     # ── Step 1: 뉴스 수집 ──────────────────────────────────────────────────────
@@ -67,6 +87,10 @@ def run_pipeline() -> dict:
         result["steps"]["content"] = {"error": traceback.format_exc()}
         return result
 
+    if not content.blog_title:
+        logger.warning("콘텐츠 생성 결과 비어있음 — 파이프라인 중단")
+        return result
+
     # ── Step 3: 카드뉴스 이미지 생성 ─────────────────────────────────────────
     try:
         card_paths = create_card_news(content)
@@ -77,28 +101,196 @@ def run_pipeline() -> dict:
         result["steps"]["card_news"] = {"error": traceback.format_exc()}
         card_paths = []
 
-    # ── Step 4: 블로그 발행 ───────────────────────────────────────────────────
+    # ── Step 4: 블로그 썸네일/본문 이미지 생성 ────────────────────────────────
     try:
-        blog_result = TistoryPublisher().post(content)
-        result["steps"]["blog"] = blog_result
-        logger.info("블로그 발행: %s", blog_result.get("url", "로컬 저장"))
+        blog_images = create_blog_images(content)
+        result["steps"]["blog_images"] = {
+            "thumbnail": str(blog_images["thumbnail"]) if blog_images["thumbnail"] else None,
+            "body_images": [str(p) for p in blog_images["body_images"]],
+        }
     except Exception:
-        logger.error("블로그 발행 실패:\n%s", traceback.format_exc())
-        result["steps"]["blog"] = {"error": traceback.format_exc()}
+        logger.error("블로그 이미지 생성 실패:\n%s", traceback.format_exc())
+        result["steps"]["blog_images"] = {"error": traceback.format_exc()}
+        blog_images = {"thumbnail": None, "body_images": []}
 
-    # ── Step 5: Instagram 발행 ─────────────────────────────────────────────────
-    try:
-        insta_result = InstagramPublisher().post_carousel(card_paths, content)
-        result["steps"]["instagram"] = insta_result
-        logger.info("Instagram 발행: %s", insta_result.get("status"))
-    except Exception:
-        logger.error("Instagram 발행 실패:\n%s", traceback.format_exc())
-        result["steps"]["instagram"] = {"error": traceback.format_exc()}
+    # ── Step 5: 초안(manifest) 저장 — 발행은 아직 하지 않음 ───────────────────
+    manifest_path = _save_manifest(content, card_paths, blog_images)
+    result["manifest"] = str(manifest_path)
+    result["status"] = "pending_review"
+    logger.info("═══ 초안 생성 완료 — 담당자 승인 대기: %s ═══", manifest_path)
+    logger.info("발행하려면: python main.py --publish %s", content.date)
 
-    # ── 결과 로그 저장 ─────────────────────────────────────────────────────────
     _save_run_log(result)
-    logger.info("═══ 파이프라인 완료 ═══")
     return result
+
+
+def _save_manifest(content: GeneratedContent, card_paths: list[Path], blog_images: dict) -> Path:
+    out_dir = PENDING_DIR / content.date
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    data = asdict(content)
+    # NewsItem 안의 datetime은 JSON 직렬화 불가 — 발행에 필요한 필드만 남김
+    data["source_articles"] = [
+        {"title": a.title, "link": a.link} for a in content.source_articles
+    ]
+    data["assets"] = {
+        "card_news": [str(p) for p in card_paths],
+        "blog_thumbnail": str(blog_images["thumbnail"]) if blog_images.get("thumbnail") else None,
+        "blog_body_images": [str(p) for p in blog_images.get("body_images", [])],
+    }
+    data["status"] = "pending_review"
+    data["generated_at"] = datetime.now(KST).isoformat()
+
+    manifest_path = out_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest_path
+
+
+# ── 2단계: 승인 후 실제 발행 ──────────────────────────────────────────────────
+
+ALL_PLATFORMS = ("blog", "instagram", "threads", "facebook")
+
+
+def list_pending() -> list[dict]:
+    """승인 대기 중인 초안 목록 반환 (최신순)."""
+    if not PENDING_DIR.exists():
+        return []
+    items = []
+    for d in sorted(PENDING_DIR.iterdir(), reverse=True):
+        manifest_path = d / "manifest.json"
+        if manifest_path.exists():
+            try:
+                data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                items.append({
+                    "date": d.name,
+                    "blog_title": data.get("blog_title", ""),
+                    "generated_at": data.get("generated_at", ""),
+                    "articles": len(data.get("source_articles", [])),
+                })
+            except Exception as exc:
+                logger.warning("manifest 읽기 실패 (%s): %s", manifest_path, exc)
+    return items
+
+
+def _load_manifest(date: str) -> Optional[dict]:
+    manifest_path = PENDING_DIR / date / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def _resolve_date(date: Optional[str]) -> Optional[str]:
+    if date and date != "latest":
+        return date
+    pending = list_pending()
+    return pending[0]["date"] if pending else None
+
+
+def _manifest_to_content(data: dict) -> GeneratedContent:
+    source_articles = [
+        NewsItem(title=a["title"], description="", link=a["link"])
+        for a in data.get("source_articles", [])
+    ]
+    return GeneratedContent(
+        date=data.get("date", ""),
+        blog_title=data.get("blog_title", ""),
+        blog_html=data.get("blog_html", ""),
+        card_slides=data.get("card_slides", []),
+        instagram_caption=data.get("instagram_caption", ""),
+        threads_caption=data.get("threads_caption", ""),
+        facebook_caption=data.get("facebook_caption", ""),
+        hashtags=data.get("hashtags", []),
+        highlight_quotes=data.get("highlight_quotes", []),
+        source_articles=source_articles,
+    )
+
+
+def publish_pending(date: Optional[str] = None, platforms: Optional[list[str]] = None) -> dict:
+    """
+    담당자 승인 후 호출 — output/pending/<date>/manifest.json 을 실제로 발행.
+    platforms 를 지정하면 해당 플랫폼만 발행 (기본: 전체).
+    """
+    resolved_date = _resolve_date(date)
+    if not resolved_date:
+        logger.error("승인 대기 중인 초안이 없습니다.")
+        return {"status": "error", "reason": "승인 대기 중인 초안 없음"}
+
+    data = _load_manifest(resolved_date)
+    if not data:
+        logger.error("초안을 찾을 수 없습니다: %s", resolved_date)
+        return {"status": "error", "reason": f"{resolved_date} 초안 없음"}
+
+    content = _manifest_to_content(data)
+    assets = data.get("assets", {})
+    card_paths = [Path(p) for p in assets.get("card_news", [])]
+    blog_thumbnail = Path(assets["blog_thumbnail"]) if assets.get("blog_thumbnail") else None
+    blog_body_images = [Path(p) for p in assets.get("blog_body_images", [])]
+
+    targets = platforms or list(ALL_PLATFORMS)
+    logger.info("═══ 발행 시작: %s (대상: %s) ═══", resolved_date, ", ".join(targets))
+
+    result: dict = {"date": resolved_date, "published_at": datetime.now(KST).isoformat(), "results": {}}
+
+    if "blog" in targets:
+        try:
+            result["results"]["blog"] = TistoryPublisher().post(
+                content, thumbnail=blog_thumbnail, body_images=blog_body_images
+            )
+        except Exception as exc:
+            logger.error("블로그 발행 실패: %s", exc)
+            result["results"]["blog"] = {"status": "failed", "reason": str(exc)}
+
+    if "instagram" in targets:
+        try:
+            result["results"]["instagram"] = InstagramPublisher().post_carousel(card_paths, content)
+        except Exception as exc:
+            logger.error("Instagram 발행 실패: %s", exc)
+            result["results"]["instagram"] = {"status": "failed", "reason": str(exc)}
+
+    if "threads" in targets:
+        try:
+            result["results"]["threads"] = ThreadsPublisher().post(card_paths, content)
+        except Exception as exc:
+            logger.error("Threads 발행 실패: %s", exc)
+            result["results"]["threads"] = {"status": "failed", "reason": str(exc)}
+
+    if "facebook" in targets:
+        try:
+            result["results"]["facebook"] = FacebookPublisher().post(card_paths, content)
+        except Exception as exc:
+            logger.error("Facebook 발행 실패: %s", exc)
+            result["results"]["facebook"] = {"status": "failed", "reason": str(exc)}
+
+    _archive_published(resolved_date, data, result)
+    logger.info("═══ 발행 완료: %s ═══", resolved_date)
+    return result
+
+
+def _archive_published(date: str, manifest_data: dict, publish_result: dict) -> None:
+    """발행 결과를 output/published/<date>/ 로 옮기고 pending 상태 갱신."""
+    out_dir = PUBLISHED_DIR / date
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_data["status"] = "published"
+    manifest_data["published_at"] = publish_result["published_at"]
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (out_dir / "publish_result.json").write_text(
+        json.dumps(publish_result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    # 전 플랫폼 발행 성공 시에만 pending 목록에서 제거 (일부 실패 시 재시도할 수 있도록 유지)
+    all_ok = all(
+        r.get("status") in ("ok", "skipped") for r in publish_result["results"].values()
+    )
+    if all_ok:
+        pending_manifest = PENDING_DIR / date / "manifest.json"
+        if pending_manifest.exists():
+            pending_manifest.unlink()
+            logger.info("승인 대기 목록에서 제거: %s", date)
+    else:
+        logger.warning("일부 플랫폼 발행 실패 — 승인 대기 목록에 유지: %s", date)
 
 
 def _save_run_log(result: dict) -> None:
@@ -111,7 +303,7 @@ def _save_run_log(result: dict) -> None:
 
 
 def start_scheduler() -> None:
-    """APScheduler를 시작하고 설정된 시각에 파이프라인을 실행합니다."""
+    """APScheduler를 시작하고 설정된 시각에 초안 생성 파이프라인을 실행합니다."""
     scheduler = BlockingScheduler(timezone=KST)
 
     hours = config.SCHEDULE_HOURS
@@ -120,9 +312,10 @@ def start_scheduler() -> None:
 
     hours_str = ",".join(str(h) for h in hours)
     trigger = CronTrigger(hour=hours_str, minute=0, timezone=KST)
-    scheduler.add_job(run_pipeline, trigger=trigger, id="news_pipeline", name="뉴스 파이프라인")
+    scheduler.add_job(run_pipeline, trigger=trigger, id="news_pipeline", name="뉴스 초안 생성 파이프라인")
 
-    logger.info("스케줄러 시작 — 실행 시각(KST): %s시", hours_str)
+    logger.info("스케줄러 시작 — 초안 생성 시각(KST): %s시", hours_str)
+    logger.info("생성된 초안은 output/pending/ 에서 검토 후 --publish 로 발행하세요.")
     logger.info("Ctrl+C로 중지")
 
     try:

@@ -22,6 +22,14 @@ TISTORY_BLOG_NAME = os.getenv("TISTORY_BLOG_NAME", "")
 INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN", "")
 INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID", "")
 
+# Threads
+THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
+THREADS_USER_ID = os.getenv("THREADS_USER_ID", "")
+
+# Facebook Page
+FACEBOOK_PAGE_ACCESS_TOKEN = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN", "")
+FACEBOOK_PAGE_ID = os.getenv("FACEBOOK_PAGE_ID", "")
+
 # Schedule (KST)
 SCHEDULE_HOURS = [
     int(h.strip())
@@ -39,3 +47,9 @@ GWANAK_KEYWORDS = ["관악구", "관악", "신림", "봉천", "낙성대", "서�
 # Card news dimensions
 CARD_WIDTH = 1080
 CARD_HEIGHT = 1080
+
+# Blog thumbnail / body image dimensions
+BLOG_THUMB_WIDTH = 1200
+BLOG_THUMB_HEIGHT = 630     # OpenGraph 표준 비율 (1.91:1)
+BLOG_BODY_WIDTH = 1200
+BLOG_BODY_HEIGHT = 675      # 16:9

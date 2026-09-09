@@ -18,35 +18,11 @@ import requests
 
 import config
 from src.content.generator import GeneratedContent, build_instagram_caption
+from src.publishers.image_hosting import upload_to_imgbb
 
 logger = logging.getLogger(__name__)
 
 GRAPH_API = "https://graph.facebook.com/v21.0"
-
-# 이미지 공개 호스팅이 없는 환경을 위한 무료 Imgbb API (선택적)
-# IMGBB_API_KEY 환경변수로 설정하면 자동으로 업로드 후 URL 획득
-import os
-IMGBB_API_KEY = os.getenv("IMGBB_API_KEY", "")
-IMGBB_UPLOAD_URL = "https://api.imgbb.com/1/upload"
-
-
-def _upload_to_imgbb(image_path: Path) -> Optional[str]:
-    """로컬 이미지를 Imgbb에 업로드하고 공개 URL 반환."""
-    if not IMGBB_API_KEY:
-        return None
-    try:
-        with open(image_path, "rb") as f:
-            resp = requests.post(
-                IMGBB_UPLOAD_URL,
-                data={"key": IMGBB_API_KEY},
-                files={"image": f},
-                timeout=30,
-            )
-        resp.raise_for_status()
-        return resp.json()["data"]["url"]
-    except Exception as exc:
-        logger.warning("Imgbb 업로드 실패 (%s): %s", image_path.name, exc)
-        return None
 
 
 class InstagramPublisher:
@@ -117,7 +93,7 @@ class InstagramPublisher:
         # 이미지 URL 목록 수집
         image_urls: list[str] = []
         for path in image_paths[:10]:  # Instagram 최대 10장
-            url = _upload_to_imgbb(path)
+            url = upload_to_imgbb(path)
             if url:
                 image_urls.append(url)
             else:
