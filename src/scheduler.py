@@ -3,14 +3,18 @@ APScheduler 기반 자동화 스케줄러.
 
 파이프라인은 2단계로 분리되어 있습니다 (회사 정책상 대외 발행은 담당자 승인 필요):
 
-  1) run_pipeline()   — 매일 설정된 시각(KST)에 실행.
+  1) run_pipeline()   — 매일 설정된 시각(KST)에 실행 (하루 여러 번 실행될 수 있음).
      뉴스 수집 → 필터 → 콘텐츠 생성 → 카드뉴스/블로그 이미지 생성 →
-     output/pending/<date>/manifest.json 에 "초안"으로 저장. 실제 SNS/블로그
-     발행 API는 호출하지 않음.
+     output/pending/<draft_id>/manifest.json 에 "초안"으로 저장. draft_id 는
+     "YYYY-MM-DD_HHMMSS" 형식의 실행 시각이라, 하루에 여러 번 실행돼도 서로
+     덮어쓰지 않고 각각 별도 초안으로 남는다. 실제 SNS/블로그 발행 API는
+     호출하지 않음.
 
-  2) publish_pending(date) — 담당자가 output/pending/<date>/ 를 검토한 뒤
-     `python main.py --publish <date>` 로 수동 실행. 이때 비로소 Tistory /
-     Instagram / Threads / Facebook 에 실제로 게시됨.
+  2) publish_pending(draft_id) — 담당자가 output/pending/<draft_id>/ 를 검토한 뒤
+     `python main.py --publish <draft_id>` (또는 `latest`) 로 수동 실행. 이때
+     비로소 Tistory / Instagram / Threads / Facebook 에 실제로 게시됨.
+     일부 플랫폼만 실패한 경우 재시도 시 이미 성공한 플랫폼은 건너뛰어
+     중복 게시를 방지한다 (manifest의 platform_results 에 결과 누적 기록).
 """
 
 import json
@@ -51,9 +55,11 @@ def run_pipeline() -> dict:
     실제 SNS/블로그 발행은 하지 않는다 (담당자 승인 후 --publish 로 별도 실행).
     반환: 실행 결과 요약 dict.
     """
-    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M KST")
-    logger.info("═══ 초안 생성 파이프라인 시작: %s ═══", now)
-    result: dict = {"started_at": now, "steps": {}}
+    now_dt = datetime.now(KST)
+    now = now_dt.strftime("%Y-%m-%d %H:%M KST")
+    draft_id = now_dt.strftime("%Y-%m-%d_%H%M%S")
+    logger.info("═══ 초안 생성 파이프라인 시작: %s (draft_id=%s) ═══", now, draft_id)
+    result: dict = {"started_at": now, "draft_id": draft_id, "steps": {}}
 
     # ── Step 1: 뉴스 수집 ──────────────────────────────────────────────────────
     try:
@@ -93,7 +99,7 @@ def run_pipeline() -> dict:
 
     # ── Step 3: 카드뉴스 이미지 생성 ─────────────────────────────────────────
     try:
-        card_paths = create_card_news(content)
+        card_paths = create_card_news(content, draft_id=draft_id)
         result["steps"]["card_news"] = {"files": [str(p) for p in card_paths]}
         logger.info("카드뉴스 %d장 생성", len(card_paths))
     except Exception:
@@ -103,7 +109,7 @@ def run_pipeline() -> dict:
 
     # ── Step 4: 블로그 썸네일/본문 이미지 생성 ────────────────────────────────
     try:
-        blog_images = create_blog_images(content)
+        blog_images = create_blog_images(content, draft_id=draft_id)
         result["steps"]["blog_images"] = {
             "thumbnail": str(blog_images["thumbnail"]) if blog_images["thumbnail"] else None,
             "body_images": [str(p) for p in blog_images["body_images"]],
@@ -114,18 +120,18 @@ def run_pipeline() -> dict:
         blog_images = {"thumbnail": None, "body_images": []}
 
     # ── Step 5: 초안(manifest) 저장 — 발행은 아직 하지 않음 ───────────────────
-    manifest_path = _save_manifest(content, card_paths, blog_images)
+    manifest_path = _save_manifest(draft_id, content, card_paths, blog_images)
     result["manifest"] = str(manifest_path)
     result["status"] = "pending_review"
     logger.info("═══ 초안 생성 완료 — 담당자 승인 대기: %s ═══", manifest_path)
-    logger.info("발행하려면: python main.py --publish %s", content.date)
+    logger.info("발행하려면: python main.py --publish %s", draft_id)
 
     _save_run_log(result)
     return result
 
 
-def _save_manifest(content: GeneratedContent, card_paths: list[Path], blog_images: dict) -> Path:
-    out_dir = PENDING_DIR / content.date
+def _save_manifest(draft_id: str, content: GeneratedContent, card_paths: list[Path], blog_images: dict) -> Path:
+    out_dir = PENDING_DIR / draft_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     data = asdict(content)
@@ -138,8 +144,10 @@ def _save_manifest(content: GeneratedContent, card_paths: list[Path], blog_image
         "blog_thumbnail": str(blog_images["thumbnail"]) if blog_images.get("thumbnail") else None,
         "blog_body_images": [str(p) for p in blog_images.get("body_images", [])],
     }
+    data["draft_id"] = draft_id
     data["status"] = "pending_review"
     data["generated_at"] = datetime.now(KST).isoformat()
+    data["platform_results"] = {}
 
     manifest_path = out_dir / "manifest.json"
     manifest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -152,7 +160,7 @@ ALL_PLATFORMS = ("blog", "instagram", "threads", "facebook")
 
 
 def list_pending() -> list[dict]:
-    """승인 대기 중인 초안 목록 반환 (최신순)."""
+    """승인 대기 중인 초안 목록 반환 (최신순). id는 --publish 에 넘길 draft_id."""
     if not PENDING_DIR.exists():
         return []
     items = []
@@ -162,28 +170,30 @@ def list_pending() -> list[dict]:
             try:
                 data = json.loads(manifest_path.read_text(encoding="utf-8"))
                 items.append({
-                    "date": d.name,
+                    "id": d.name,
+                    "date": data.get("date", ""),
                     "blog_title": data.get("blog_title", ""),
                     "generated_at": data.get("generated_at", ""),
                     "articles": len(data.get("source_articles", [])),
+                    "platform_results": data.get("platform_results", {}),
                 })
             except Exception as exc:
                 logger.warning("manifest 읽기 실패 (%s): %s", manifest_path, exc)
     return items
 
 
-def _load_manifest(date: str) -> Optional[dict]:
-    manifest_path = PENDING_DIR / date / "manifest.json"
+def _load_manifest(draft_id: str) -> Optional[dict]:
+    manifest_path = PENDING_DIR / draft_id / "manifest.json"
     if not manifest_path.exists():
         return None
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
-def _resolve_date(date: Optional[str]) -> Optional[str]:
-    if date and date != "latest":
-        return date
+def _resolve_draft_id(draft_id: Optional[str]) -> Optional[str]:
+    if draft_id and draft_id != "latest":
+        return draft_id
     pending = list_pending()
-    return pending[0]["date"] if pending else None
+    return pending[0]["id"] if pending else None
 
 
 def _manifest_to_content(data: dict) -> GeneratedContent:
@@ -207,18 +217,29 @@ def _manifest_to_content(data: dict) -> GeneratedContent:
 
 def publish_pending(date: Optional[str] = None, platforms: Optional[list[str]] = None) -> dict:
     """
-    담당자 승인 후 호출 — output/pending/<date>/manifest.json 을 실제로 발행.
+    담당자 승인 후 호출 — output/pending/<draft_id>/manifest.json 을 실제로 발행.
+    date 에는 draft_id(예: 2026-09-10_180000) 또는 "latest" 를 넘긴다.
     platforms 를 지정하면 해당 플랫폼만 발행 (기본: 전체).
+    이미 성공(status=ok)한 플랫폼은 재호출 시 자동으로 건너뛰어 중복 게시를 방지한다.
     """
-    resolved_date = _resolve_date(date)
-    if not resolved_date:
+    if platforms is not None:
+        invalid = [p for p in platforms if p not in ALL_PLATFORMS]
+        if invalid or not platforms:
+            reason = (
+                f"알 수 없는 플랫폼: {', '.join(invalid)}" if invalid else "플랫폼 목록이 비어 있습니다"
+            )
+            logger.error("%s (허용값: %s) — 아무것도 발행하지 않았습니다.", reason, ", ".join(ALL_PLATFORMS))
+            return {"status": "error", "reason": reason}
+
+    resolved_id = _resolve_draft_id(date)
+    if not resolved_id:
         logger.error("승인 대기 중인 초안이 없습니다.")
         return {"status": "error", "reason": "승인 대기 중인 초안 없음"}
 
-    data = _load_manifest(resolved_date)
+    data = _load_manifest(resolved_id)
     if not data:
-        logger.error("초안을 찾을 수 없습니다: %s", resolved_date)
-        return {"status": "error", "reason": f"{resolved_date} 초안 없음"}
+        logger.error("초안을 찾을 수 없습니다: %s", resolved_id)
+        return {"status": "error", "reason": f"{resolved_id} 초안 없음"}
 
     content = _manifest_to_content(data)
     assets = data.get("assets", {})
@@ -226,71 +247,112 @@ def publish_pending(date: Optional[str] = None, platforms: Optional[list[str]] =
     blog_thumbnail = Path(assets["blog_thumbnail"]) if assets.get("blog_thumbnail") else None
     blog_body_images = [Path(p) for p in assets.get("blog_body_images", [])]
 
-    targets = platforms or list(ALL_PLATFORMS)
-    logger.info("═══ 발행 시작: %s (대상: %s) ═══", resolved_date, ", ".join(targets))
+    existing_results: dict = data.get("platform_results", {})
+    requested = platforms or list(ALL_PLATFORMS)
+    already_done = [p for p in requested if existing_results.get(p, {}).get("status") == "ok"]
+    targets = [p for p in requested if p not in already_done]
 
-    result: dict = {"date": resolved_date, "published_at": datetime.now(KST).isoformat(), "results": {}}
+    published_at = datetime.now(KST).isoformat()
+    attempt_results: dict = {}
 
-    if "blog" in targets:
-        try:
-            result["results"]["blog"] = TistoryPublisher().post(
-                content, thumbnail=blog_thumbnail, body_images=blog_body_images
-            )
-        except Exception as exc:
-            logger.error("블로그 발행 실패: %s", exc)
-            result["results"]["blog"] = {"status": "failed", "reason": str(exc)}
+    if already_done:
+        logger.info("이미 발행 성공한 플랫폼은 건너뜀(중복 게시 방지): %s", ", ".join(already_done))
 
-    if "instagram" in targets:
-        try:
-            result["results"]["instagram"] = InstagramPublisher().post_carousel(card_paths, content)
-        except Exception as exc:
-            logger.error("Instagram 발행 실패: %s", exc)
-            result["results"]["instagram"] = {"status": "failed", "reason": str(exc)}
+    if not targets:
+        logger.info("발행할 대상이 없습니다 (요청한 플랫폼 모두 이미 발행 완료): %s", resolved_id)
+    else:
+        logger.info("═══ 발행 시작: %s (대상: %s) ═══", resolved_id, ", ".join(targets))
 
-    if "threads" in targets:
-        try:
-            result["results"]["threads"] = ThreadsPublisher().post(card_paths, content)
-        except Exception as exc:
-            logger.error("Threads 발행 실패: %s", exc)
-            result["results"]["threads"] = {"status": "failed", "reason": str(exc)}
+        if "blog" in targets:
+            try:
+                attempt_results["blog"] = TistoryPublisher().post(
+                    content, thumbnail=blog_thumbnail, body_images=blog_body_images
+                )
+            except Exception as exc:
+                logger.error("블로그 발행 실패: %s", exc)
+                attempt_results["blog"] = {"status": "failed", "reason": str(exc)}
 
-    if "facebook" in targets:
-        try:
-            result["results"]["facebook"] = FacebookPublisher().post(card_paths, content)
-        except Exception as exc:
-            logger.error("Facebook 발행 실패: %s", exc)
-            result["results"]["facebook"] = {"status": "failed", "reason": str(exc)}
+        if "instagram" in targets:
+            try:
+                attempt_results["instagram"] = InstagramPublisher().post_carousel(card_paths, content)
+            except Exception as exc:
+                logger.error("Instagram 발행 실패: %s", exc)
+                attempt_results["instagram"] = {"status": "failed", "reason": str(exc)}
 
-    _archive_published(resolved_date, data, result)
-    logger.info("═══ 발행 완료: %s ═══", resolved_date)
-    return result
+        if "threads" in targets:
+            try:
+                attempt_results["threads"] = ThreadsPublisher().post(card_paths, content)
+            except Exception as exc:
+                logger.error("Threads 발행 실패: %s", exc)
+                attempt_results["threads"] = {"status": "failed", "reason": str(exc)}
+
+        if "facebook" in targets:
+            try:
+                attempt_results["facebook"] = FacebookPublisher().post(card_paths, content)
+            except Exception as exc:
+                logger.error("Facebook 발행 실패: %s", exc)
+                attempt_results["facebook"] = {"status": "failed", "reason": str(exc)}
+
+    merged_results = {**existing_results, **attempt_results}
+    fully_completed = _archive_published(resolved_id, data, merged_results, published_at)
+
+    logger.info("═══ 발행 처리 완료: %s (전체 완료: %s) ═══", resolved_id, fully_completed)
+    return {
+        "date": resolved_id,
+        "published_at": published_at,
+        "results": attempt_results,
+        "already_done": already_done,
+        "fully_completed": fully_completed,
+    }
 
 
-def _archive_published(date: str, manifest_data: dict, publish_result: dict) -> None:
-    """발행 결과를 output/published/<date>/ 로 옮기고 pending 상태 갱신."""
-    out_dir = PUBLISHED_DIR / date
-    out_dir.mkdir(parents=True, exist_ok=True)
+def _archive_published(draft_id: str, manifest_data: dict, merged_results: dict, published_at: str) -> bool:
+    """
+    누적된 플랫폼별 발행 결과(merged_results)를 반영.
+    ALL_PLATFORMS 전부가 ok/skipped 로 완료됐을 때만 output/published/ 로 옮기고
+    pending 목록에서 제거한다. 아니면 pending manifest 에 결과를 누적 기록해두고
+    유지 — 다음 --publish 재시도 시 이미 성공한 플랫폼은 자동으로 건너뛴다.
+    반환: 이번 호출로 전 플랫폼 발행이 완료됐는지 여부.
+    """
+    manifest_data["platform_results"] = merged_results
 
-    manifest_data["status"] = "published"
-    manifest_data["published_at"] = publish_result["published_at"]
-    (out_dir / "manifest.json").write_text(
-        json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding="utf-8"
+    fully_completed = all(
+        merged_results.get(p, {}).get("status") in ("ok", "skipped") for p in ALL_PLATFORMS
     )
-    (out_dir / "publish_result.json").write_text(
-        json.dumps(publish_result, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
 
-    # 전 플랫폼 발행 성공 시에만 pending 목록에서 제거 (일부 실패 시 재시도할 수 있도록 유지)
-    all_ok = all(
-        r.get("status") in ("ok", "skipped") for r in publish_result["results"].values()
-    )
-    if all_ok:
-        pending_manifest = PENDING_DIR / date / "manifest.json"
+    pending_manifest = PENDING_DIR / draft_id / "manifest.json"
+
+    if fully_completed:
+        manifest_data["status"] = "published"
+        manifest_data["published_at"] = published_at
+
+        out_dir = PUBLISHED_DIR / draft_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "manifest.json").write_text(
+            json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        (out_dir / "publish_result.json").write_text(
+            json.dumps(
+                {"draft_id": draft_id, "published_at": published_at, "results": merged_results},
+                ensure_ascii=False, indent=2,
+            ),
+            encoding="utf-8",
+        )
+
         if pending_manifest.exists():
             pending_manifest.unlink()
-            logger.info("승인 대기 목록에서 제거: %s", date)
+        logger.info("모든 플랫폼 발행 완료 — 승인 대기 목록에서 제거: %s", draft_id)
     else:
-        logger.warning("일부 플랫폼 발행 실패 — 승인 대기 목록에 유지: %s", date)
+        if pending_manifest.exists():
+            pending_manifest.write_text(
+                json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        logger.warning(
+            "일부 플랫폼 미완료 — 승인 대기 목록에 유지 (재시도 시 완료된 플랫폼은 자동 건너뜀): %s",
+            draft_id,
+        )
+
+    return fully_completed
 
 
 def _save_run_log(result: dict) -> None:

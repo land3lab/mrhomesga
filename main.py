@@ -5,9 +5,9 @@ Mr. Homes GA — 부동산 뉴스 자동 콘텐츠 생성 시스템
 사용법:
   python main.py                    # 스케줄러 시작 (매일 설정된 시각에 "초안" 생성)
   python main.py --now              # 즉시 1회 초안 생성 (뉴스+콘텐츠+이미지, 발행은 안 함)
-  python main.py --list-pending     # 승인 대기 중인 초안 목록 확인
+  python main.py --list-pending     # 승인 대기 중인 초안 목록 확인 (draft_id 확인용)
   python main.py --publish latest   # 가장 최근 초안을 실제 발행 (블로그+인스타+쓰레드+페북)
-  python main.py --publish 2025-01-01 --platforms blog,instagram
+  python main.py --publish 2026-09-10_180000 --platforms blog,instagram
   python main.py --test             # 설정 검증만 수행
 
 ※ 회사 정책: SNS/블로그 등 대외 발행은 AI가 단독으로 확정하지 않습니다.
@@ -71,9 +71,11 @@ def _list_pending() -> None:
         return
     logger.info("── 승인 대기 초안 (%d건) ──", len(pending))
     for item in pending:
+        done = [p for p, r in item["platform_results"].items() if r.get("status") == "ok"]
+        done_note = f" | 발행 완료: {', '.join(done)}" if done else ""
         logger.info(
-            "  %s | %s | 기사 %d건 | 생성: %s",
-            item["date"], item["blog_title"], item["articles"], item["generated_at"],
+            "  %s | %s(%s) | 기사 %d건 | 생성: %s%s",
+            item["id"], item["blog_title"], item["date"], item["articles"], item["generated_at"], done_note,
         )
 
 
@@ -89,7 +91,10 @@ def main() -> None:
     parser.add_argument("--now", action="store_true", help="즉시 1회 초안 생성 (발행 안 함)")
     parser.add_argument("--test", action="store_true", help="설정 검증만")
     parser.add_argument("--list-pending", action="store_true", help="승인 대기 중인 초안 목록")
-    parser.add_argument("--publish", metavar="DATE", help="지정 날짜(YYYY-MM-DD) 또는 'latest' 초안을 실제 발행")
+    parser.add_argument(
+        "--publish", metavar="DRAFT_ID",
+        help="지정 초안(--list-pending 에서 확인한 draft_id, 예: 2026-09-10_180000) 또는 'latest' 를 실제 발행",
+    )
     parser.add_argument(
         "--platforms", metavar="blog,instagram,threads,facebook",
         help="--publish 와 함께 사용, 발행 대상 플랫폼 제한 (기본: 전체)",

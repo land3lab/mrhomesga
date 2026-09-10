@@ -78,12 +78,15 @@ def _body_image(index: int, quote: str) -> Image.Image:
     return img
 
 
-def create_blog_images(content: GeneratedContent, output_dir: Optional[Path] = None) -> dict:
+def create_blog_images(
+    content: GeneratedContent, draft_id: Optional[str] = None, output_dir: Optional[Path] = None
+) -> dict:
     """
     블로그 썸네일 + 본문 삽입 이미지를 생성해 저장.
+    draft_id 로 저장 폴더를 구분한다 (미지정 시 content.date 로 폴백).
     반환: {"thumbnail": Path, "body_images": [Path, ...]}
     """
-    out_dir = (output_dir or config.OUTPUT_DIR / "blog_images") / content.date
+    out_dir = (output_dir or config.OUTPUT_DIR / "blog_images") / (draft_id or content.date)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     result: dict = {"thumbnail": None, "body_images": []}

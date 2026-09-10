@@ -132,16 +132,20 @@ def _slide_cta(slide_title: str, slide_body: str) -> Image.Image:
     return img
 
 
-def create_card_news(content: GeneratedContent, output_dir: Optional[Path] = None) -> list[Path]:
+def create_card_news(
+    content: GeneratedContent, draft_id: Optional[str] = None, output_dir: Optional[Path] = None
+) -> list[Path]:
     """
     GeneratedContent의 card_slides를 이미지 파일로 저장.
+    draft_id 로 저장 폴더를 구분한다 (하루에 여러 번 실행돼도 서로 덮어쓰지 않도록—
+    미지정 시 content.date 로 폴백하지만, 이 경우 같은 날 여러 실행이 서로 덮어쓸 수 있음).
     반환: 저장된 이미지 경로 리스트.
     """
     if not content.card_slides:
         logger.warning("카드뉴스 슬라이드 데이터 없음")
         return []
 
-    out_dir = (output_dir or config.OUTPUT_DIR / "card_news") / content.date
+    out_dir = (output_dir or config.OUTPUT_DIR / "card_news") / (draft_id or content.date)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     paths: list[Path] = []

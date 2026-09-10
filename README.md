@@ -4,8 +4,9 @@
 Claude AI로 **블로그 포스트 + 카드뉴스 + 인스타그램/쓰레드/페이스북 캡션**과 이미지를 생성합니다.
 
 > ⚠️ **회사 정책: 대외 발행은 AI가 단독으로 확정하지 않습니다.**
-> 매일 자동 실행되는 것은 **"초안 생성"** 까지입니다. 생성된 초안은 `output/pending/<날짜>/`에
-> 저장되며, 담당자가 내용을 검토한 뒤 `python main.py --publish <날짜>` 명령을 직접 실행해야
+> 매일 자동 실행되는 것은 **"초안 생성"** 까지입니다. 생성된 초안은 `output/pending/<draft_id>/`에
+> 저장되며(하루 여러 번 실행돼도 실행 시각별로 구분되어 서로 덮어쓰지 않음), 담당자가 내용을
+> 검토한 뒤 `python main.py --publish <draft_id>` 명령을 직접 실행해야
 > 비로소 Tistory / Instagram / Threads / Facebook에 실제로 게시됩니다.
 
 > 이 저장소에는 별도 앱들이 함께 있습니다:
@@ -32,7 +33,7 @@ Claude AI 콘텐츠 생성
   ├── 카드뉴스 1080×1080 (인스타/쓰레드용)
   └── 블로그 썸네일 1200×630 + 본문 삽입 이미지
     ↓
-[초안 저장] output/pending/<날짜>/manifest.json  ← 여기서 자동화 중단, 담당자 검토
+[초안 저장] output/pending/<draft_id>/manifest.json  ← 여기서 자동화 중단, 담당자 검토
     ↓ (담당자 승인 후 --publish 실행)
 실제 발행
   ├── Tistory 블로그 API (썸네일·본문 이미지 삽입)
@@ -95,8 +96,12 @@ python main.py --list-pending
 
 # 3) 담당자 검토 후 실제 발행 (기본: 전체 플랫폼)
 python main.py --publish latest
-python main.py --publish 2025-01-01
+python main.py --publish 2026-09-10_180000     # --list-pending 에서 확인한 draft_id
 python main.py --publish latest --platforms blog,instagram   # 일부 플랫폼만
+
+# 일부 플랫폼만 실패했다면, 재실행 시 이미 성공한 플랫폼은 자동으로 건너뛰고
+# 실패했던 플랫폼만 재시도합니다 (중복 게시 방지).
+python main.py --publish latest
 
 # 설정만 확인
 python main.py --test
@@ -157,21 +162,24 @@ python main.py --publish latest          # 검토 후 실제 발행
 
 ```
 output/
-├── pending/<날짜>/manifest.json     # 승인 대기 중인 초안 (콘텐츠 전문 + 이미지 경로)
-├── published/<날짜>/
+├── pending/<draft_id>/manifest.json # 승인 대기 중인 초안 (콘텐츠 전문 + 이미지 경로 + platform_results)
+├── published/<draft_id>/
 │   ├── manifest.json                # 발행된 콘텐츠 스냅샷
-│   └── publish_result.json          # 플랫폼별 발행 결과
+│   └── publish_result.json          # 플랫폼별 최종 발행 결과
 ├── blog/<날짜>_blog.html            # Tistory 미설정 시 로컬 저장(썸네일·본문 이미지 삽입됨)
-├── blog_images/<날짜>/
+├── blog_images/<draft_id>/
 │   ├── thumbnail.jpg                # 1200×630 대표 썸네일
 │   └── body_0X.jpg                  # 본문 삽입용 하이라이트 이미지
-├── card_news/<날짜>/
+├── card_news/<draft_id>/
 │   ├── slide_01.jpg                 # 표지
 │   └── ...
 └── logs/
     ├── mrhomesga.log
     └── run_YYYYMMDD_HHMM.json       # 초안 생성 실행 결과 요약
 ```
+
+`draft_id`는 `YYYY-MM-DD_HHMMSS` 형식의 실행 시각입니다 (예: `2026-09-10_180000`).
+하루에 여러 번 자동 실행돼도 실행마다 별도 초안으로 남아 서로 덮어쓰지 않습니다.
 
 ## 주의사항
 
@@ -180,6 +188,7 @@ output/
 - 카드뉴스·블로그 이미지는 공개 URL이 필요 → `IMGBB_API_KEY` 설정 권장 (미설정 시 Instagram/Threads는 스킵, 블로그는 로컬 이미지 참조로 저장)
 - Facebook은 로컬 이미지를 직접 업로드하므로 Imgbb 없이도 동작
 - Tistory Access Token은 만료 기간(60일) 확인 후 재발급 필요
+- 일부 플랫폼만 발행에 실패해도 초안은 승인 대기 목록에 유지되며, 성공한 플랫폼은 `platform_results`에 기록되어 재실행 시 자동으로 건너뜁니다(중복 게시 방지)
 - 뉴스 수집 범위는 `src/news/fetcher.py`의 `NATIONAL_QUERIES`(전국)/`GWANAK_QUERIES`(관악구 우선순위)로 조정
 - **뉴스 수집은 Naver API 키 없이 RSS 피드만으로 기본 동작합니다.** Naver 검색 API는 정확도를 높이고 싶을 때 추가하는 선택 사항이며, 발급이 막혀 있어도 시스템 운영에 지장이 없습니다.
 - 실제 SNS/블로그 계정 연결과 자동 게시는 **담당자·조직장 승인** 후 진행하세요
