@@ -16,7 +16,8 @@ Claude AI로 **블로그 포스트 + 카드뉴스 + 인스타그램/쓰레드/�
 ## 아키텍처
 
 ```
-뉴스 수집 (Naver API / RSS, 전국 부동산 + 관악구 우선순위)
+뉴스 수집 (RSS 피드가 기본 — 키 불필요, 전국 부동산 + 관악구 우선순위)
+  ※ Naver 검색 API 키를 넣으면 그쪽을 우선 사용 (선택 사항, 없어도 정상 동작)
     ↓
 필터링 (부동산 키워드, 관악구는 combined 태그로 상위 노출)
     ↓
@@ -56,7 +57,7 @@ sudo apt install fonts-nanum   # 또는 fonts-noto-cjk
 | 서비스 | 발급 방법 |
 |--------|-----------|
 | **Anthropic (Claude)** | https://console.anthropic.com |
-| **Naver 검색 API** | https://developers.naver.com/apps → 검색 권한 신청 |
+| **Naver 검색 API** (선택) | https://developers.naver.com/apps → 검색 권한 신청. ⚠️ 계정에 따라 애플리케이션 등록 화면의 "사용 API" 목록에 "검색"이 안 보이는 경우가 있음(정책 변경 추정, 미확인) — 이땐 네이버 문의하기로 확인 필요. **없어도 RSS 피드로 정상 동작하므로 필수 아님.** |
 | **Tistory API** | https://www.tistory.com/guide/api → 앱 등록 후 Access Token 발급 |
 | **Instagram Graph API** | Meta Developer → Instagram Graph API (비즈니스 계정 + Facebook 페이지 연결 필요) |
 | **Threads API** | Meta Developer → Threads API (threads_basic, threads_content_publish 권한) |
@@ -71,7 +72,7 @@ sudo apt install fonts-nanum   # 또는 fonts-noto-cjk
 
 ```env
 ANTHROPIC_API_KEY=...
-NAVER_CLIENT_ID=... / NAVER_CLIENT_SECRET=...
+NAVER_CLIENT_ID=... / NAVER_CLIENT_SECRET=...   # 선택 — 비워두면 RSS 피드로 자동 대체
 TISTORY_ACCESS_TOKEN=... / TISTORY_BLOG_NAME=myblog
 INSTAGRAM_ACCESS_TOKEN=... / INSTAGRAM_ACCOUNT_ID=...
 THREADS_ACCESS_TOKEN=... / THREADS_USER_ID=...
@@ -145,4 +146,5 @@ output/
 - Facebook은 로컬 이미지를 직접 업로드하므로 Imgbb 없이도 동작
 - Tistory Access Token은 만료 기간(60일) 확인 후 재발급 필요
 - 뉴스 수집 범위는 `src/news/fetcher.py`의 `NATIONAL_QUERIES`(전국)/`GWANAK_QUERIES`(관악구 우선순위)로 조정
+- **뉴스 수집은 Naver API 키 없이 RSS 피드만으로 기본 동작합니다.** Naver 검색 API는 정확도를 높이고 싶을 때 추가하는 선택 사항이며, 발급이 막혀 있어도 시스템 운영에 지장이 없습니다.
 - 실제 SNS/블로그 계정 연결과 자동 게시는 **담당자·조직장 승인** 후 진행하세요

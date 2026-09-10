@@ -44,6 +44,10 @@ def _ensure_dirs() -> None:
 def _test_config() -> None:
     import config
     logger.info("── 설정 검증 ──")
+
+    fallback_msgs = {
+        "NAVER_CLIENT_ID": "✗ (미설정 — 선택 사항. RSS 피드로 자동 대체되어 뉴스 수집엔 지장 없음)",
+    }
     checks = {
         "ANTHROPIC_API_KEY": bool(config.ANTHROPIC_API_KEY),
         "NAVER_CLIENT_ID": bool(config.NAVER_CLIENT_ID),
@@ -53,7 +57,7 @@ def _test_config() -> None:
         "FACEBOOK_PAGE_ACCESS_TOKEN": bool(config.FACEBOOK_PAGE_ACCESS_TOKEN),
     }
     for key, ok in checks.items():
-        status = "✓" if ok else "✗ (미설정 — 해당 플랫폼은 로컬 저장/스킵으로 폴백)"
+        status = "✓" if ok else fallback_msgs.get(key, "✗ (미설정 — 해당 플랫폼은 로컬 저장/스킵으로 폴백)")
         logger.info("  %s: %s", key, status)
     logger.info("  SCHEDULE_HOURS(KST): %s", config.SCHEDULE_HOURS)
     logger.info("  KEYWORDS: %s", config.KEYWORDS)
