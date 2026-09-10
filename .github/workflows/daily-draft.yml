@@ -1,0 +1,54 @@
+name: 부동산 뉴스 초안 자동 생성
+
+on:
+  schedule:
+    - cron: "0 23 * * *"   # 매일 08:00 KST
+    - cron: "0 9 * * *"    # 매일 18:00 KST
+  workflow_dispatch: {}     # Actions 탭에서 수동 실행도 가능
+
+permissions:
+  contents: write
+
+jobs:
+  generate-draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 한글 폰트 설치 (이미지 렌더링용)
+        run: sudo apt-get update && sudo apt-get install -y fonts-nanum
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 필수 키 확인
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::리포지토리 Settings → Secrets and variables → Actions 에 ANTHROPIC_API_KEY 를 등록하세요"
+            exit 1
+          fi
+
+      - name: 초안 생성 (뉴스 수집 → 콘텐츠 → 이미지, 발행은 하지 않음)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+        run: python main.py --now
+
+      - name: 초안 커밋 (담당자 검토용)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f output/pending output/blog_images output/card_news
+          if git diff --cached --quiet; then
+            echo "새 초안 없음 — 커밋 생략"
+          else
+            git commit -m "chore(draft): 부동산 뉴스 초안 자동 생성 $(date -u +%Y-%m-%d)"
+            git push
+          fi

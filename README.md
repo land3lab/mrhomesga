@@ -118,6 +118,41 @@ sudo journalctl -u mrhomesga -f   # 로그 확인
 systemd로 상시 구동하는 것은 **초안 생성 스케줄러**입니다. 실제 발행은 담당자가
 서버에 접속해 `--publish` 명령을 실행하거나, 별도의 승인 절차를 거쳐야 합니다.
 
+## 서버 없이 GitHub Actions로 자동 실행하기 (권장 — 별도 서버 불필요)
+
+상시 켜진 서버가 없어도, `.github/workflows/daily-draft.yml`이 매일 GitHub Actions에서
+"초안 생성"을 자동으로 대신 실행해줍니다. 비용은 사실상 무료입니다(사설 저장소도
+Actions 무료 사용량 월 2,000분 제공, 이 작업은 1회 실행에 1~2분 수준).
+
+**1) 필요한 키 등록** — 저장소 **Settings → Secrets and variables → Actions → New repository secret**
+| Secret 이름 | 필수 여부 |
+|---|---|
+| `ANTHROPIC_API_KEY` | 필수 (콘텐츠 생성용) |
+| `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | 선택 (없으면 RSS로 자동 대체) |
+
+(Tistory/Instagram/Threads/Facebook/Imgbb 키는 여기 등록할 필요 없습니다 — 발행은 아래처럼 항상 로컬에서 사람이 직접 실행합니다.)
+
+**2) 자동/수동 실행**
+- 매일 08:00, 18:00(KST)에 자동 실행됩니다 (`.github/workflows/daily-draft.yml`의 `cron` 값으로 조정 가능)
+- 지금 바로 테스트하려면: 저장소 **Actions 탭 → "부동산 뉴스 초안 자동 생성" → Run workflow**
+
+**3) 결과 검토**
+생성된 초안(`output/pending/`, `output/blog_images/`, `output/card_news/`)은 워크플로가
+저장소에 자동으로 커밋합니다. GitHub에서 해당 폴더를 열면 이미지가 바로 미리보기되어
+다운로드 없이 검토할 수 있습니다.
+
+**4) 승인 발행 (반드시 사람이 로컬에서 직접 실행)**
+```bash
+git pull                                 # Actions가 커밋한 초안을 내려받음
+python main.py --list-pending
+python main.py --publish latest          # 검토 후 실제 발행
+```
+발행 단계는 회사 정책상 자동화하지 않았습니다 — Tistory/Instagram/Threads/Facebook 키는
+개인/업무용 컴퓨터의 `.env`에만 넣고 이 명령을 직접 실행하세요.
+
+> ⚠️ 매 실행마다 생성된 이미지가 저장소에 커밋되어 저장소 용량이 서서히 늘어납니다.
+> 필요시 오래된 `output/` 하위 폴더를 주기적으로 정리하세요.
+
 ## 생성 파일 구조
 
 ```
