@@ -34,7 +34,10 @@ class GeneratedContent:
     blog_html: str = ""
     card_slides: list[dict] = field(default_factory=list)  # [{title, body}, ...]
     instagram_caption: str = ""
+    threads_caption: str = ""
+    facebook_caption: str = ""
     hashtags: list[str] = field(default_factory=list)
+    highlight_quotes: list[str] = field(default_factory=list)  # 블로그 본문 삽입 이미지용 핵심 문장 2~3개
     source_articles: list[NewsItem] = field(default_factory=list)
 
 
@@ -71,12 +74,16 @@ def generate_blog_post(items: list[NewsItem]) -> GeneratedContent:
     ...
   ],
   "instagram_caption": "인스타그램 캡션 (감성적이고 실용적, 200자 이내, 줄바꿈 포함)",
-  "hashtags": ["#관악구부동산", "#서울부동산", ...]
+  "threads_caption": "쓰레드(Threads)용 캡션 (짧고 대화체, 500자 이내, 질문/의견을 유도하는 톤)",
+  "facebook_caption": "페이스북용 캡션 (정보 전달 중심, 300~500자, 문단 구분 포함)",
+  "hashtags": ["#관악구부동산", "#서울부동산", ...],
+  "highlight_quotes": ["블로그 본문 이미지에 큼직하게 넣을 핵심 한 줄 요약 1", "핵심 한 줄 요약 2"]
 }}
 
 ## 조건
 - card_slides: 5~7개 슬라이드 (첫 번째는 표지, 마지막은 행동 유도)
 - hashtags: 15~20개 (관악구, 신림, 부동산, 아파트, 전세, 월세 등 관련 태그 포함)
+- highlight_quotes: 2~3개, 각 40자 이내의 임팩트 있는 한 줄 (숫자/시세/정책 변화 등 핵심 사실 우선)
 - 전문적이지만 이해하기 쉬운 문체
 - 부정확한 정보 추측 금지 — 기사에 있는 내용만 사용
 
@@ -109,7 +116,10 @@ JSON만 출력하세요. 다른 텍스트 없이."""
         blog_html=data.get("blog_html", ""),
         card_slides=data.get("card_slides", []),
         instagram_caption=data.get("instagram_caption", ""),
+        threads_caption=data.get("threads_caption", ""),
+        facebook_caption=data.get("facebook_caption", ""),
         hashtags=data.get("hashtags", []),
+        highlight_quotes=data.get("highlight_quotes", []),
         source_articles=items,
     )
     logger.info("콘텐츠 생성 완료 — 제목: %s", content.blog_title)
@@ -120,3 +130,17 @@ def build_instagram_caption(content: GeneratedContent) -> str:
     """인스타그램용 최종 캡션 조합 (본문 + 해시태그)."""
     tags = " ".join(content.hashtags)
     return f"{content.instagram_caption}\n\n{tags}"
+
+
+def build_threads_caption(content: GeneratedContent) -> str:
+    """쓰레드용 최종 캡션 조합 (본문 + 핵심 해시태그 소수)."""
+    tags = " ".join(content.hashtags[:5])
+    text = content.threads_caption or content.instagram_caption
+    return f"{text}\n\n{tags}".strip()
+
+
+def build_facebook_caption(content: GeneratedContent) -> str:
+    """페이스북용 최종 캡션 조합 (본문 + 해시태그)."""
+    tags = " ".join(content.hashtags)
+    text = content.facebook_caption or content.instagram_caption
+    return f"{text}\n\n{tags}".strip()
