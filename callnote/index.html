@@ -208,6 +208,12 @@ button.icon-btn {
 .inbox-info span { font-size: 12px; color: var(--muted); }
 .inbox-row .btn { flex: none; padding: 6px 12px; }
 .inbox-row .inbox-del { padding: 6px 10px; }
+.sheet-alert { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 12px;
+  background: var(--orange-soft); color: var(--orange-ink); border: 1.5px solid var(--danger);
+  border-radius: 12px; padding: 11px 13px; font-size: 14px; }
+.sheet-alert[hidden] { display: none; }
+.sheet-alert .sa-msg { flex: 1; min-width: 180px; line-height: 1.45; }
+.sheet-alert .btn { flex: none; }
 .rec-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
 .ract { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 700;
   padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg);
@@ -373,6 +379,12 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
 </div>
 
 <main>
+
+<!-- 시트 연결 자동 점검 경고 (문제 있을 때만 표시) -->
+<div id="sheet-alert" class="sheet-alert" hidden role="alert">
+  <div class="sa-msg">⚠️ <b>매물장(구글시트) 연결에 문제가 있어요.</b> 지금 저장한 기록이 시트에 안 올라갈 수 있습니다.</div>
+  <button class="btn primary" id="sheet-alert-fix" type="button">설정에서 확인</button>
+</div>
 
 <!-- ── 목록 ─────────────────────────────── -->
 <section id="view-list" role="tabpanel" aria-labelledby="tab-list">
@@ -2616,6 +2628,35 @@ async function testSheetConnection() {
 }
 el("btn-sheet-test").onclick = testSheetConnection;
 
+// 시작 시 / 앱 복귀 시 시트 연결을 조용히 점검해, 문제가 있으면 상단 경고 배너를 띄운다
+// (저장 실패가 몇 주씩 조용히 지나가는 것을 방지 — 앱은 쓰기 응답을 못 읽어 스스로는 실패를 모름)
+let lastAutoCheckAt = 0;
+async function autoCheckSheetConnection() {
+  const url = (settings.sheetUrl || "").trim();
+  if (!url) { el("sheet-alert").hidden = true; return; }   // 시트 미연결(개인 사용)은 경고 아님
+  if (navigator.onLine === false) return;                  // 오프라인이면 판단 보류
+  lastAutoCheckAt = Date.now();
+  let ok = false;
+  try {
+    const res = await fetch(sheetGetUrl({}));
+    const text = await res.text();
+    let j = null; try { j = JSON.parse(text); } catch {}
+    ok = !!(j && j.ok);
+  } catch { ok = false; }
+  settings.lastSheetTestOk = ok;
+  saveSettings(settings);
+  refreshConnSummary();
+  el("sheet-alert").hidden = ok;
+}
+el("sheet-alert-fix").onclick = () => {
+  stopMic(); show("settings"); loadStaffList(false); refreshConnSummary();
+  setTimeout(() => { const box = el("sheet-url"); if (box) box.scrollIntoView({ behavior: "smooth", block: "center" }); testSheetConnection(); }, 80);
+};
+// 앱으로 다시 돌아올 때도 점검 (과도한 호출 방지: 10분 간격)
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - lastAutoCheckAt > 600000) autoCheckSheetConnection();
+});
+
 /* ══════════════ 직원 관리 (사장 전용) ══════════════ */
 function inviteText(name, code) {
   return `📞 매통이 초대 — ${name}님
@@ -3019,6 +3060,7 @@ renderList();
 checkShared();
 refreshConnSummary();
 inboxRefresh(); // 지난번에 정리 안 하고 남겨둔 통화 녹음 대기함 복원
+autoCheckSheetConnection(); // 시트 연결 자동 점검 → 문제 시 상단 경고 배너
 /* ══════════════ 이용권 (30일 무료 체험 + 이용코드) ══════════════ */
 // RSAR 라이선스 서버 웹 앱 URL — 판매자(RSAR)의 '매통이 라이선스' 시트와 연결됨.
 // 비어 있으면 기기 자체 판정(체험 30일 + 코드 형식 검사)으로 동작한다.
