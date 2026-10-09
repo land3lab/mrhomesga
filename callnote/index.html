@@ -559,6 +559,18 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
   </div>
 
   <div class="card">
+    <h2>📞 통화 저장 규칙</h2>
+    <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:14.5px">
+      <input type="checkbox" id="skip-short" style="width:20px; height:20px; accent-color:var(--accent); flex:none">
+      <span>아주 짧은 통화 자동 건너뛰기 — <b>10초 미만</b> 통화는 저장하지 않음</span>
+    </label>
+    <p class="hint" style="margin:8px 0 0">끊긴 전화·잘못 걸린 전화처럼 아주 짧은 통화를 자동으로 건너뜁니다.
+      모르는 번호라도 10초 이상 통화는 평소대로 저장됩니다. (녹음 길이를 못 읽는 기종에선 저장을 유지)</p>
+    <div class="btnbar"><button class="btn primary" id="btn-save-rule">저장</button></div>
+    <div class="status" id="rule-status" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="card">
     <h2>📊 매물장 시트 연결</h2>
     <label class="f">내 역할</label>
     <div class="chips" id="role-chips" style="margin:2px 0 6px">
@@ -1751,6 +1763,23 @@ function fileToBase64(file) {
     r.readAsDataURL(file);
   });
 }
+// 녹음 파일의 재생 길이(초)를 읽는다. 못 읽으면 NaN (그 경우 건너뛰지 않고 저장 유지)
+function audioDuration(file) {
+  return new Promise(resolve => {
+    try {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("audio");
+      a.preload = "metadata";
+      let done = false;
+      const finish = d => { if (done) return; done = true; try { URL.revokeObjectURL(url); } catch {} resolve(d); };
+      a.onloadedmetadata = () => finish(isFinite(a.duration) && a.duration > 0 ? a.duration : NaN);
+      a.onerror = () => finish(NaN);
+      setTimeout(() => finish(NaN), 4000); // 안전 타임아웃
+      a.src = url;
+    } catch { resolve(NaN); }
+  });
+}
+var SHORT_CALL_SEC = 10; // 이 값(초) 미만의 아주 짧은 통화는 자동 건너뜀 (설정에서 끌 수 있음)
 
 /* ══════════════ Gemini AI 정리 ══════════════ */
 const PROMPT = `당신은 한국 부동산 중개사무소의 통화 기록 정리 비서입니다.
@@ -2166,6 +2195,7 @@ function initSettings() {
   el("msg-signature").value = settings.msgSignature || "";
   const sigPos = settings.msgSignaturePos === "head" ? "head" : "tail";
   el("sig-pos-chips").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.pos === sigPos));
+  el("skip-short").checked = settings.skipShortCalls !== false; // 기본 ON
   renderContacts();
   applyRoleUI();
 }
@@ -2188,6 +2218,13 @@ el("btn-save-sig").onclick = () => {
   renderList(); // 카드의 문자 링크 미리보기 갱신
   const pos = settings.msgSignaturePos === "head" ? "머릿말(앞)" : "꼬리말(뒤)";
   showStatus("sig-status", "ok", settings.msgSignature ? `저장되었습니다 — 사무소 정보가 ${pos}로 붙습니다.` : "저장되었습니다 — 사무소 정보 없이 보냅니다.");
+};
+el("btn-save-rule").onclick = () => {
+  settings.skipShortCalls = el("skip-short").checked;
+  saveSettings(settings);
+  showStatus("rule-status", "ok", settings.skipShortCalls
+    ? "저장되었습니다 — 10초 미만 통화는 자동으로 건너뜁니다."
+    : "저장되었습니다 — 모든 통화를 저장합니다(자동 건너뛰기 끔).");
 };
 
 /* ── 역할(사장/직원)과 접근 키 ── */
@@ -3055,6 +3092,14 @@ window.__nativeShareEnd = async () => {
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     const file = new File([bytes], share.name || "통화녹음.m4a", { type: share.mime || "audio/mp4" });
+    // 아주 짧은 통화(기본 10초 미만) 자동 건너뛰기 — 설정에서 끌 수 있음. 길이를 못 읽으면 저장 유지.
+    if (settings.skipShortCalls !== false) {
+      const dur = await audioDuration(file);
+      if (isFinite(dur) && dur < SHORT_CALL_SEC) {
+        showToast(`📵 ${Math.round(dur)}초짜리 짧은 통화는 저장하지 않았어요. (설정에서 끌 수 있어요)`);
+        return;
+      }
+    }
     // 걸려온 번호(통화기록) 우선, 없으면 파일명에서 추출
     const caller = (callerInfo && (callerInfo.phone || callerInfo.contactName)) ? callerInfo : callerFromFilename(file.name);
     // 무조건 대기함에 먼저 보관 — 편집 중이던 내용이나 이전 녹음을 절대 덮어쓰지 않는다
