@@ -1014,9 +1014,10 @@ function __scopes__() {
   <div class="modal-card">
     <h2>🎧 통화 기록이 도착했어요</h2>
     <p id="share-modal-desc"></p>
-    <div class="btnbar">
+    <div class="btnbar stack">
       <button class="btn primary" id="share-yes">🤖 지금 AI로 정리</button>
-      <button class="btn" id="share-no">나중에 직접</button>
+      <button class="btn" id="share-no">📥 나중에 (대기함에 보관)</button>
+      <button class="btn danger" id="share-discard">🗑 저장 안 함 (버리기)</button>
     </div>
   </div>
 </div>
@@ -2900,10 +2901,23 @@ el("share-no").onclick = () => {
   el("share-modal").classList.add("hidden");
   if (justReceivedId) {
     justReceivedId = null;
-    showToast("📥 정리 대기함에 저장했어요.\n홈(목록) 화면 위쪽 목록에서 언제든 정리할 수 있어요.");
+    showToast("📥 정리 대기함에 보관했어요.\n홈(목록) 화면 위쪽에서 언제든 정리할 수 있어요.");
   } else {
     showStatus("ai-status", "info", "준비되어 있어요 — 언제든 [🤖 AI 자동 정리]를 누르면 됩니다.");
   }
+};
+// 🗑 저장 안 함 — 방금 도착한 통화 녹음을 저장하지 않고 버린다 (스팸·개인 전화 등)
+el("share-discard").onclick = async () => {
+  el("share-modal").classList.add("hidden");
+  if (justReceivedId) {
+    const id = justReceivedId; justReceivedId = null;
+    try { await idbDel(id); } catch {}
+    if (currentInboxId === id) currentInboxId = null;
+    await inboxRefresh();
+  } else {
+    clearPendingAudio(); el("transcript").value = "";
+  }
+  showToast("🗑 이 통화는 저장하지 않았습니다.");
 };
 
 /* ══════════════ 네이티브 안드로이드 앱 브릿지 ══════════════
