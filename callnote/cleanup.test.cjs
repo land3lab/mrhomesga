@@ -1,0 +1,86 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const fs = require('node:fs');
+const html = fs.readFileSync(__dirname + '/index.html', 'utf8');
+const upload = html.slice(html.indexOf('async function uploadAudioToGemini('), html.indexOf('/* ══════════════ Gemini AI 정리'));
+const flow = html.slice(html.indexOf('    let result;\n    if (pendingAudio)'), html.indexOf('    renderAiSteps(steps, steps.length - 1);'));
+const response = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
+function setup({ state = 'ACTIVE', check = 'ACTIVE', deletion = 200, aiError, size = 15 * 1048576 } = {}) {
+  const events = [], warnings = [], nodes = {};
+  const ctx = vm.createContext({
+    console: { warn: (...args) => warnings.push(args) },
+    setTimeout: fn => fn(), encodeURIComponent,
+    fetch: async (url, options = {}) => {
+      if (options.method === 'DELETE') {
+        events.push('delete');
+        if (deletion === 'network') throw new Error('secret URL');
+        return response({}, deletion);
+      }
+      if (url.includes('/upload/')) { events.push('start'); return { ok: true, headers: { get: () => 'https://upload.test' } }; }
+      if (url === 'https://upload.test') { events.push('finalize'); return response({ file: { name: 'files/test', state, uri: 'test-uri', mimeType: 'audio/mp4' } }); }
+      events.push('check');
+      if (check === 'network') throw new Error('network');
+      if (check === 'http') return response({}, 500);
+      return response({ state: check, uri: 'test-uri' });
+    },
+    pendingAudio: size === null ? null : { size, name: 'test.m4a' },
+    settings: { apiKey: 'fake-test-key' }, INLINE_MAX_BYTES: 12 * 1048576,
+    guessMime: () => 'audio/mp4', PROMPT: '', PROMPT_AUDIO_EXTRA: '', callerContext: () => '',
+    text: 'memo', steps: [], renderAiSteps: () => {},
+    el: id => nodes[id] ||= {},
+    fileToBase64: async () => { events.push('base64'); return 'fake'; },
+    callGemini: async parts => {
+      events.push(parts.some(p => p.fileData) ? 'ai-file' : parts.some(p => p.inlineData) ? 'ai-inline' : 'ai-text');
+      if (aiError) throw aiError;
+      return { summary: 'ok', transcript: 'test transcript' };
+    },
+  });
+  vm.runInContext(upload, ctx);
+  return { events, warnings, ctx, run: () => vm.runInContext('(async () => {\n' + flow + '\nreturn result; })()', ctx) };
+}
+test('all inline scripts parse', () => {
+  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (!/src=|application\/ld\+json/.test(match[1])) new vm.Script(match[2]);
+  }
+});
+test('AI success awaits one DELETE after generation', async () => {
+  const s = setup(); assert.equal((await s.run()).summary, 'ok');
+  assert.deepEqual(s.events, ['start', 'finalize', 'ai-file', 'delete']);
+});
+for (const message of ['HTTP 429', 'HTTP 500', 'network error', 'invalid JSON', 'empty response']) {
+  test('AI failure cleans up and preserves original error: ' + message, async () => {
+    const error = new Error(message), s = setup({ aiError: error });
+    await assert.rejects(s.run(), e => e === error);
+    assert.equal(s.events.at(-1), 'delete'); assert.equal(s.events.filter(e => e === 'delete').length, 1);
+  });
+}
+for (const deletion of [403, 500, 'network', 404]) {
+  for (const fails of [false, true]) test(`DELETE ${deletion}, AI fails=${fails}`, async () => {
+    const error = fails ? new Error('original AI error') : undefined;
+    const s = setup({ deletion, aiError: error });
+    if (fails) await assert.rejects(s.run(), e => e === error);
+    else assert.equal((await s.run()).summary, 'ok');
+    assert.equal(s.warnings.length, deletion === 404 ? 0 : 1);
+    assert.ok(!JSON.stringify(s.warnings).includes('fake-test-key'));
+    assert.ok(!JSON.stringify(s.warnings).includes('secret URL'));
+  });
+}
+for (const check of ['FAILED', 'PROCESSING', 'network', 'http']) {
+  test('processing failure cleans up: ' + check, async () => {
+    const s = setup({ state: 'PROCESSING', check });
+    await assert.rejects(s.run(), /녹음 파일 처리/);
+    assert.equal(s.events.at(-1), 'delete'); assert.ok(!s.events.includes('ai-file'));
+    assert.equal(s.events.filter(e => e === 'delete').length, 1);
+  });
+}
+test('processing becomes ACTIVE before AI and DELETE', async () => {
+  const s = setup({ state: 'PROCESSING' }); await s.run();
+  assert.deepEqual(s.events, ['start', 'finalize', 'check', 'ai-file', 'delete']);
+});
+for (const size of [1048576, 12 * 1048576, 12 * 1048576 + 1, null]) {
+  test('routing boundary: ' + size, async () => {
+    const s = setup({ size }); await s.run();
+    assert.deepEqual(s.events, size === null ? ['ai-text'] : size <= 12 * 1048576 ? ['base64', 'ai-inline'] : ['start', 'finalize', 'ai-file', 'delete']);
+  });
+}
