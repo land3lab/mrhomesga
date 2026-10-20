@@ -1588,20 +1588,36 @@ async function uploadAudioToGemini(file, apiKey, mimeType) {
   if (!finalizeRes.ok) throw new Error(`녹음 파일 업로드 실패 (HTTP ${finalizeRes.status})`);
   const info = await finalizeRes.json();
   const f = info.file || info;
-  let state = f.state, uri = f.uri;
-  for (let tries = 0; state === "PROCESSING" && tries < 30; tries++) {
-    await new Promise((r) => setTimeout(r, 1500));
+  // 삭제 실패가 AI 결과나 원래 오류를 덮어쓰지 않도록 한다.
+  const cleanup = async () => {
     try {
-      const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${f.name}?key=${encodeURIComponent(apiKey)}`);
-      const checkInfo = await checkRes.json();
-      state = checkInfo.state;
-      uri = checkInfo.uri;
-    } catch { break; }
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${f.name}?key=${encodeURIComponent(apiKey)}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 404) {
+        console.warn("[callnote] 원격 녹음 파일 삭제 실패", { status: res.status });
+      }
+    } catch {
+      // API 키가 포함된 URL이나 원본 오류 객체는 기록하지 않는다.
+      console.warn("[callnote] 원격 녹음 파일 삭제 요청 실패");
+    }
+  };
+  try {
+    let state = f.state, uri = f.uri;
+    for (let tries = 0; state === "PROCESSING" && tries < 30; tries++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${f.name}?key=${encodeURIComponent(apiKey)}`);
+        if (!checkRes.ok) throw new Error("File status check failed");
+        const checkInfo = await checkRes.json();
+        state = checkInfo.state;
+        uri = checkInfo.uri;
+      } catch { break; }
+    }
+    if (state !== "ACTIVE") throw new Error("녹음 파일 처리가 지연되고 있습니다 — 잠시 후 다시 시도해 주세요.");
+    return { fileUri: uri, mimeType: f.mimeType || mimeType, cleanup };
+  } catch (err) {
+    await cleanup();
+    throw err;
   }
-  if (state !== "ACTIVE") throw new Error("녹음 파일 처리가 지연되고 있습니다 — 잠시 후 다시 시도해 주세요.");
-  // 다 쓴 원격 파일은 굳이 붙잡아둘 필요 없음 — 실패해도(권한 등) 결과에는 영향 없으므로 조용히 무시
-  const cleanup = () => fetch(`https://generativelanguage.googleapis.com/v1beta/${f.name}?key=${encodeURIComponent(apiKey)}`, { method: "DELETE" }).catch(() => {});
-  return { fileUri: uri, mimeType: f.mimeType || mimeType, cleanup };
 }
 
 /* ══════════════ Gemini AI 정리 ══════════════ */
@@ -1761,11 +1777,14 @@ el("btn-ai").onclick = async () => {
       if (pendingAudio.size > INLINE_MAX_BYTES) {
         // 큰 파일: 먼저 업로드하고 그 파일을 참조해서 정리 요청 (인라인 방식의 ~20MB 제한을 우회)
         const uploaded = await uploadAudioToGemini(pendingAudio, (settings.apiKey || "").trim(), mimeType);
-        result = await callGemini([
-          { text: promptText },
-          { fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.fileUri } },
-        ], true);
-        uploaded.cleanup();
+        try {
+          result = await callGemini([
+            { text: promptText },
+            { fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.fileUri } },
+          ], true);
+        } finally {
+          await uploaded.cleanup();
+        }
       } else {
         const b64 = await fileToBase64(pendingAudio);
         result = await callGemini([
@@ -3030,3 +3049,4 @@ if (window.visualViewport) {
 </script>
 </body>
 </html>
+
