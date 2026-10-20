@@ -541,8 +541,11 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
     <input type="text" id="model" placeholder="자동 (gemini-flash-latest 등에서 선택)">
     <div class="btnbar"><button class="btn primary" id="btn-save-settings">저장</button></div>
     <div class="status" id="settings-status" role="status" aria-live="polite"></div>
-    <p class="hint">키는 이 기기 브라우저(localStorage)에만 저장됩니다. [AI 자동 정리]를 누를 때만
-    통화 내용/녹음이 Google Gemini API로 전송되고, 그 외에는 모든 데이터가 기기 안에만 있습니다.</p>
+    <div class="btnbar"><button class="btn" id="btn-gemini-diagnostic" type="button">Gemini 업로드·삭제 진단</button></div>
+    <p class="hint">먼저 설정을 저장하세요. 약 12MB의 무음 테스트 오디오를 전송하고 AI를 1회 호출합니다(사용량·요금이 발생할 수 있음). 실제 통화·상담 기록은 사용하지 않습니다. 완료될 때까지 화면을 열어 두세요.</p>
+    <div class="status" id="gemini-diagnostic-status" role="status" aria-live="polite"></div>
+    <p class="hint">키는 이 기기 브라우저(localStorage)에만 저장됩니다. [AI 자동 정리] 또는 진단 버튼을 누르면
+    통화 내용/녹음 또는 진단용 무음 오디오가 Google Gemini API로 전송되고, 그 외에는 모든 데이터가 기기 안에만 있습니다.</p>
   </div>
 
   <div class="card">
@@ -969,7 +972,7 @@ function __scopes__() {
     <div id="ob-step2" class="hidden">
       <h2>1 / 2 · AI 자동 정리를 준비합니다</h2>
       <p class="hint" style="margin:4px 0 8px">무료 Google AI 키로 녹음을 받아쓰고 상담카드를 자동으로 만듭니다.
-      키는 <b>이 기기에만</b> 저장되고, [AI 자동 정리]를 누를 때만 통화 내용이 Google AI로 전달됩니다.
+      키는 <b>이 기기에만</b> 저장되고, [AI 자동 정리] 또는 진단 버튼을 누르면 통화 내용이 Google AI로 전달됩니다.
       결제 카드를 등록하지 않으면 대부분 무료 범위로 충분하지만, Google 정책은 변경될 수 있습니다.</p>
       <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="btn"
          style="display:flex; text-decoration:none; margin-bottom:8px">🔑 무료 AI 키 발급</a>
@@ -2212,6 +2215,61 @@ el("edit-more-backdrop").onclick = closeMoreMenu;
 el("menu-copy").onclick = () => { closeMoreMenu(); doCopy(); };
 el("menu-share").onclick = () => { closeMoreMenu(); doShareOne(); };
 el("menu-delete").onclick = () => { closeMoreMenu(); doDelete(); };
+
+// 개인정보가 없는 무음 WAV로 실제 Files API 경로를 확인한다.
+function makeDiagnosticAudio() {
+  const dataSize = 12 * 1024 * 1024;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  const ascii = (offset, value) => { for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i)); };
+  ascii(0, "RIFF"); view.setUint32(4, 36 + dataSize, true); ascii(8, "WAVE");
+  ascii(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true); view.setUint32(24, 48000, true); view.setUint32(28, 96000, true);
+  view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  ascii(36, "data"); view.setUint32(40, dataSize, true);
+  return new File([buffer], "callnote-diagnostic-silence.wav", { type: "audio/wav" });
+}
+
+async function runGeminiDiagnostic(report) {
+  const key = (settings.apiKey || "").trim();
+  if (!key) { report("설정에 API 키를 입력하고 저장한 뒤 실행해 주세요."); return; }
+  let uploaded, aiPassed = false, deleted = false;
+  try {
+    report("1/4 테스트 오디오 업로드 중 (약 12MB)…");
+    uploaded = await uploadAudioToGemini(makeDiagnosticAudio(), key, "audio/wav");
+    report("1/4 업로드 성공\n2/4 AI 호출 중…");
+    await callGemini([
+      { text: 'This is a synthetic silent test recording. Return JSON with category "기타" and summary "진단 성공". Do not transcribe.' },
+      { fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.fileUri } },
+    ], false);
+    aiPassed = true;
+  } catch {
+    report(uploaded ? "2/4 AI 호출 실패. 파일 삭제를 계속 진행합니다." : "1/4 업로드 또는 파일 처리 실패. 연결·API 권한을 확인해 주세요.");
+  } finally {
+    if (uploaded) {
+      report("3/4 테스트 파일 삭제 중…");
+      await uploaded.cleanup();
+      try {
+        // 업로드 함수가 받은 URI에서 파일 이름만 추출하고 API 키는 화면에 표시하지 않는다.
+        const url = new URL(uploaded.fileUri);
+        const match = url.pathname.match(/^\/v1beta\/(files\/[A-Za-z0-9_-]+)$/);
+        if (url.origin !== "https://generativelanguage.googleapis.com" || !match) throw new Error("Invalid file URI");
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${match[1]}?key=${encodeURIComponent(key)}`);
+        deleted = res.status === 404;
+      } catch {}
+      report(`업로드: 성공\nAI 호출: ${aiPassed ? "성공" : "실패"}\n파일 삭제 확인: ${deleted ? "성공 (재조회 404)" : "확인 실패 — 원격 파일이 남아 있을 수 있습니다."}\n${aiPassed && deleted ? "진단 통과" : "진단 미통과"}`);
+    }
+  }
+}
+
+el("btn-gemini-diagnostic").onclick = async () => {
+  const btn = el("btn-gemini-diagnostic");
+  btn.disabled = true;
+  const report = message => { const box = el("gemini-diagnostic-status"); box.className = "status show"; box.style.whiteSpace = "pre-line"; box.textContent = message; };
+  try { await runGeminiDiagnostic(report); }
+  catch { report("진단을 완료하지 못했습니다. 연결 상태를 확인해 주세요."); }
+  finally { btn.disabled = false; }
+};
 
 /* ══════════════ 설정 ══════════════ */
 function initSettings() {

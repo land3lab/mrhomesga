@@ -88,3 +88,35 @@ test('only one upload implementation and no conflict markers', () => {
   assert.equal((html.match(/async function uploadAudioToGemini\(/g) || []).length, 1);
   assert.ok(!/^(<<<<<<<|=======|>>>>>>>)/m.test(html));
 });
+
+const diagnostic = html.slice(html.indexOf('// 개인정보가 없는 무음 WAV'), html.indexOf('/* ══════════════ 설정'));
+for (const failure of [false, true]) {
+  for (const status of [404, 200, 403]) test(`diagnostic AI failure=${failure}, verification=${status}`, async () => {
+    const events = [], reports = [];
+    const ctx = vm.createContext({ settings: { apiKey: 'fake-key' }, File, ArrayBuffer, DataView, URL,
+      el: () => ({}),
+      uploadAudioToGemini: async file => {
+        assert.ok(file.size > 12 * 1048576);
+        assert.equal(file.type, 'audio/wav');
+        const view = new DataView(await file.arrayBuffer());
+        assert.equal(view.getUint32(40, true), file.size - 44);
+        events.push('upload');
+        return { fileUri: 'https://generativelanguage.googleapis.com/v1beta/files/test', mimeType: 'audio/wav', cleanup: async () => events.push('delete') };
+      },
+      callGemini: async () => { events.push('ai'); if (failure) throw new Error('secret'); },
+      fetch: async () => { events.push('verify'); return { status }; },
+    });
+    vm.runInContext(diagnostic, ctx);
+    ctx.report = text => reports.push(text);
+    await vm.runInContext('runGeminiDiagnostic(report)', ctx);
+    assert.deepEqual(events, ['upload', 'ai', 'delete', 'verify']);
+    assert.equal(reports.at(-1).includes('진단 통과'), !failure && status === 404);
+    assert.ok(!reports.join('').includes('fake-key'));
+    assert.ok(!reports.join('').includes('secret'));
+  });
+}
+test('diagnostic without key never uploads', async () => {
+  const ctx = vm.createContext({ settings: {}, el: () => ({}), report: () => {}, uploadAudioToGemini: () => { throw new Error('must not upload'); } });
+  vm.runInContext(diagnostic, ctx);
+  await vm.runInContext('runGeminiDiagnostic(report)', ctx);
+});
