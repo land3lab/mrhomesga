@@ -105,13 +105,19 @@ def _fetch_rss(url: str) -> list[NewsItem]:
         return []
 
 
+# 전국 부동산 일반 뉴스 (기본 수집 대상)
+NATIONAL_QUERIES = ["부동산 정책", "부동산 시장", "아파트 시세", "전세 매매", "부동산 대책"]
+# 관악구 로컬 뉴스 (우선순위 태그용 — filter.py에서 combined로 상위 노출)
+GWANAK_QUERIES = ["부동산 관악구", "서울 관악 아파트", "신림 부동산"]
+
+
 def fetch_all_news() -> list[NewsItem]:
-    """모든 소스에서 뉴스를 수집하여 반환."""
+    """모든 소스에서 뉴스를 수집하여 반환. 전국 부동산 뉴스가 기본, 관악구는 우선순위 태그로 별도 수집."""
     items: list[NewsItem] = []
 
-    # 1) Naver API — 핵심 키워드 검색
-    for kw in ["부동산 관악구", "서울 관악 아파트", "부동산 서울"]:
-        items.extend(_fetch_naver_api(kw, display=20))
+    # 1) Naver API — 전국 부동산 키워드 + 관악구 우선순위 키워드
+    for kw in NATIONAL_QUERIES + GWANAK_QUERIES:
+        items.extend(_fetch_naver_api(kw, display=15))
 
     # 2) RSS 폴백
     if not items:

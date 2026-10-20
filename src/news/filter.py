@@ -59,7 +59,8 @@ def filter_news(items: list[NewsItem]) -> FilteredNews:
 def top_items(filtered: FilteredNews, limit: int = 5) -> list[NewsItem]:
     """
     콘텐츠 생성에 쓸 상위 기사 선정.
-    우선순위: combined > gwanak > real_estate
+    전국 부동산 뉴스가 기본 모수이며, 관악구 관련 기사는 우선순위 태그로 상단 노출됨.
+    우선순위: combined(부동산+관악구) > gwanak > real_estate(전국)
     """
     seen: set[str] = set()
     selected: list[NewsItem] = []

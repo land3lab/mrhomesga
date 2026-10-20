@@ -198,6 +198,28 @@ button.icon-btn {
 }
 .filechip.show { display: flex; }
 .filechip button { margin-left: auto; border: none; background: none; color: inherit; font-size: 16px; cursor: pointer; width: 32px; height: 32px; }
+.inbox { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 11px; background: var(--card); }
+.inbox.hidden { display: none; }
+.inbox-head { font-size: 13.5px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.inbox-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.inbox-row:first-child { border-top: none; }
+.inbox-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.inbox-info b { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inbox-info span { font-size: 12px; color: var(--muted); }
+.inbox-row .btn { flex: none; padding: 6px 12px; }
+.inbox-row .inbox-del { padding: 6px 10px; }
+.sheet-alert { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 12px;
+  background: var(--orange-soft); color: var(--orange-ink); border: 1.5px solid var(--danger);
+  border-radius: 12px; padding: 11px 13px; font-size: 14px; }
+.sheet-alert[hidden] { display: none; }
+.sheet-alert .sa-msg { flex: 1; min-width: 180px; line-height: 1.45; }
+.sheet-alert .btn { flex: none; }
+.rec-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+.ract { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 700;
+  padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg);
+  color: inherit; text-decoration: none; cursor: pointer; line-height: 1; }
+.ract.call { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
+.ract.kko { background: #fee500; color: #191600; border-color: transparent; }
 .interim { color: var(--muted); font-size: 13.5px; font-style: italic; min-height: 1.2em; }
 details.guide { border-top: 1px solid var(--line); padding: 10px 0 2px; }
 details.guide summary { cursor: pointer; font-weight: 700; font-size: 14.5px; padding: 8px 0; min-height: 24px; }
@@ -358,8 +380,18 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
 
 <main>
 
+<!-- 시트 연결 자동 점검 경고 (문제 있을 때만 표시) -->
+<div id="sheet-alert" class="sheet-alert" hidden role="alert">
+  <div class="sa-msg">⚠️ <b>매물장(구글시트) 연결에 문제가 있어요.</b> 지금 저장한 기록이 시트에 안 올라갈 수 있습니다.</div>
+  <button class="btn primary" id="sheet-alert-fix" type="button">설정에서 확인</button>
+</div>
+
 <!-- ── 목록 ─────────────────────────────── -->
 <section id="view-list" role="tabpanel" aria-labelledby="tab-list">
+  <div class="inbox hidden" id="inbox-panel">
+    <div class="inbox-head">📥 정리 안 한 통화 녹음 <span id="inbox-count"></span> — 아래에서 골라 정리하세요</div>
+    <div id="inbox-list"></div>
+  </div>
   <input type="search" id="search" placeholder="이름 · 연락처 · 단지 · 내용 검색" aria-label="기록 검색">
   <div class="chips" id="filter-chips">
     <button data-cat="" class="on">전체</button>
@@ -397,6 +429,8 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
     </div>
   </div>
 
+  <div id="edit-actions" class="inbox hidden" style="margin-bottom:10px"></div>
+
   <div class="card">
     <h2 id="edit-title">통화 내용 가져오기</h2>
     <button class="btn primary" id="btn-file" style="width:100%; font-size:16.5px; min-height:54px">📞 통화 녹음 가져오기</button>
@@ -419,8 +453,10 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
       <p class="hint"><b>스피커폰 통화 중 실시간 받아쓰기</b> — 전화를 스피커폰으로 전환한 뒤
         [🎙 바로 받아쓰기]를 누르면 대화가 실시간 텍스트로 쌓입니다 (마이크 성능에 따라 인식률 차이 있음,
         중요한 통화는 녹음 파일 방식을 권장 — 안드로이드 Chrome에서 가장 잘 동작).</p>
-      <p class="hint"><b>파일 용량 제한</b> — 녹음 파일은 200MB까지 가능합니다 (통화가 길어 파일이 커도
-      자동으로 먼저 업로드한 뒤 정리하므로 대부분의 통화는 문제없어요). 그래도 넘으면 통화를 나눠서 올려주세요.</p>
+      <p class="hint"><b>긴 통화도 OK</b> — 통화가 길어 녹음이 커도 자동 업로드로 처리합니다(최대 약 200MB).</p>
+      <p class="hint"><b>정리 대기함</b> — 바로 정리하지 않아도 받은 녹음은 홈(목록) 화면 위쪽
+        <b>📥 정리 안 한 통화 녹음</b> 목록에 쌓입니다. 연속으로 전화가 와도 이전 녹음이 사라지지 않으니,
+        나중에 목록에서 골라 정리하세요.</p>
     </details>
 
     <label class="f" for="transcript" style="margin-top:14px">통화 내용 (받아쓰기 결과 / 직접 입력·붙여넣기)</label>
@@ -507,6 +543,31 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
     <div class="status" id="settings-status" role="status" aria-live="polite"></div>
     <p class="hint">키는 이 기기 브라우저(localStorage)에만 저장됩니다. [AI 자동 정리]를 누를 때만
     통화 내용/녹음이 Google Gemini API로 전송되고, 그 외에는 모든 데이터가 기기 안에만 있습니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>💬 문자·카톡 인사말 (사무소 정보)</h2>
+    <p class="hint" style="margin-top:0">기록에서 [💬 문자]·[💛 카톡·공유]로 보낼 때 메시지에 자동으로 붙는 사무소 정보예요.
+      여러 줄로 넣을 수 있고, 머릿말(앞)/꼬리말(뒤) 위치를 고르세요. 비우면 붙지 않습니다.</p>
+    <div class="chips" id="sig-pos-chips" style="margin:2px 0 8px">
+      <button data-pos="tail" class="on">꼬리말 (메시지 뒤)</button>
+      <button data-pos="head">머릿말 (메시지 앞)</button>
+    </div>
+    <textarea id="msg-signature" rows="6" placeholder="예)&#10;미스터홈즈 부동산중개 관악센터&#10;서울특별시 관악로 6길 99&#10;대표 길문수&#10;☎ 02-882-1009 / 010-2611-7548"></textarea>
+    <div class="btnbar"><button class="btn primary" id="btn-save-sig">저장</button></div>
+    <div class="status" id="sig-status" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="card">
+    <h2>📞 통화 저장 규칙</h2>
+    <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:14.5px">
+      <input type="checkbox" id="skip-short" style="width:20px; height:20px; accent-color:var(--accent); flex:none">
+      <span>아주 짧은 통화 자동 건너뛰기 — <b>10초 미만</b> 통화는 저장하지 않음</span>
+    </label>
+    <p class="hint" style="margin:8px 0 0">끊긴 전화·잘못 걸린 전화처럼 아주 짧은 통화를 자동으로 건너뜁니다.
+      모르는 번호라도 10초 이상 통화는 평소대로 저장됩니다. (녹음 길이를 못 읽는 기종에선 저장을 유지)</p>
+    <div class="btnbar"><button class="btn primary" id="btn-save-rule">저장</button></div>
+    <div class="status" id="rule-status" role="status" aria-live="polite"></div>
   </div>
 
   <div class="card">
@@ -966,9 +1027,10 @@ function __scopes__() {
   <div class="modal-card">
     <h2>🎧 통화 기록이 도착했어요</h2>
     <p id="share-modal-desc"></p>
-    <div class="btnbar">
+    <div class="btnbar stack">
       <button class="btn primary" id="share-yes">🤖 지금 AI로 정리</button>
-      <button class="btn" id="share-no">나중에 직접</button>
+      <button class="btn" id="share-no">📥 나중에 (대기함에 보관)</button>
+      <button class="btn danger" id="share-discard">🗑 저장 안 함 (버리기)</button>
     </div>
   </div>
 </div>
@@ -1180,6 +1242,48 @@ function visibleRecords() {
   return list;
 }
 
+// 저장된 연락처 문자열에서 걸/받은 첫 번째 전화번호만 뽑아 tel/sms용 숫자로
+function primaryPhone(str) {
+  const m = String(str || "").match(/01[0-9][-. ]?\d{3,4}[-. ]?\d{4}|0\d{1,2}[-. ]?\d{3,4}[-. ]?\d{4}/);
+  return m ? m[0].replace(/[^0-9+]/g, "") : "";
+}
+// 문자·카톡에 채워 보낼 기본 인사말 (기록 내용 기반, 상대가 수정 가능)
+function msgTemplate(r) {
+  const f = r.fields || {};
+  const subject = f.address || f.summary || [f.propertyType, f.dealType].filter(Boolean).join(" ");
+  const hi = f.name ? `${f.name}님, 안녕하세요.` : "안녕하세요.";
+  const body = subject ? `${hi} ${subject} 건으로 연락드립니다.` : `${hi} 지난 통화 관련해 연락드립니다.`;
+  const sig = (settings.msgSignature || "").trim();
+  if (!sig) return body;
+  return settings.msgSignaturePos === "head" ? `${sig}\n\n${body}` : `${body}\n\n${sig}`;
+}
+// 전화·문자·카톡 버튼 (목록 카드와 편집화면에서 공용)
+function contactActionsHtml(r) {
+  const tel = primaryPhone(r.fields && r.fields.phone);
+  if (!tel) return "";
+  return `<div class="rec-actions">
+    <a class="ract call" href="tel:${esc(tel)}" onclick="event.stopPropagation()">📞 전화</a>
+    <a class="ract" href="sms:${esc(tel)}?body=${encodeURIComponent(msgTemplate(r))}" onclick="event.stopPropagation()">💬 문자</a>
+    <button class="ract kko" data-msg="${r.id}" onclick="event.stopPropagation()">💛 카톡·공유</button>
+  </div>`;
+}
+// 💛 카톡·공유 버튼 배선 (공유창 → 카카오톡 등, 미지원 시 복사)
+function wireMsgButtons(root) {
+  root.querySelectorAll("[data-msg]").forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const r = records.find(x => x.id === btn.dataset.msg);
+      if (!r) return;
+      const text = msgTemplate(r);
+      if (navigator.share) {
+        try { await navigator.share({ text }); } catch (err) { /* 취소 등 무시 */ }
+      } else {
+        try { await navigator.clipboard.writeText(text); showToast("💛 메시지를 복사했어요 — 카카오톡을 열어 붙여넣으면 됩니다."); }
+        catch { prompt("아래 메시지를 복사해 카카오톡에 붙여넣으세요", text); }
+      }
+    };
+  });
+}
 function recCardHtml(r) {
   const f = r.fields;
   const prices = [f.priceSale && "매매 " + f.priceSale,
@@ -1203,6 +1307,7 @@ function recCardHtml(r) {
       ${prices.length ? `<div class="price">${esc(prices.join(" · "))}</div>` : ""}
       ${f.summary ? `<div class="sum">${esc(f.summary)}</div>` : ""}
       ${todo.length ? `<div class="todo">☑️ ${esc(todo[0])}${todo.length > 1 ? ` 외 ${todo.length - 1}건` : ""}</div>` : ""}
+      ${!shareMode ? contactActionsHtml(r) : ""}
     </div>`;
 }
 
@@ -1261,6 +1366,7 @@ function renderList() {
       renderList();
     };
   });
+  wireMsgButtons(box); // 💛 카톡·공유 버튼
 }
 
 /* ══════════════ 편집 폼 ══════════════ */
@@ -1353,6 +1459,7 @@ function openEdit(id) {
   stopMic();
   editingId = id;
   callerInfo = null;
+  currentInboxId = null; // 새 편집을 시작하면 대기함 연결 해제 (저장 시 잘못 지워지지 않도록)
   clearPendingAudio();
   hideStatus("ai-status"); hideStatus("save-status");
   hideAiSteps();
@@ -1363,6 +1470,11 @@ function openEdit(id) {
   updateFieldGrouping(rec ? rec.fields : emptyFields());
   el("menu-delete").classList.toggle("hidden", !rec);
   tabs.edit.textContent = rec ? "✏️ 기록 편집" : "＋ 통화 정리";
+  // 저장된 기록(번호 있음)을 열면 상단에 전화·문자·카톡 바로가기 표시
+  const ea = el("edit-actions");
+  const actions = rec ? contactActionsHtml(rec) : "";
+  if (actions) { ea.innerHTML = `<div class="inbox-head">💬 이 통화 상대에게 바로 연락</div>${actions}`; ea.classList.remove("hidden"); wireMsgButtons(ea); }
+  else { ea.innerHTML = ""; ea.classList.add("hidden"); }
   hasUnsavedChanges = false;
   checkDraftRecovery();
   show("edit");
@@ -1495,7 +1607,15 @@ function stopMic() {
 
 /* ══════════════ 녹음 파일 ══════════════ */
 el("btn-file").onclick = () => el("file-input").click();
-el("file-input").onchange = (e) => { if (e.target.files[0]) setPendingAudio(e.target.files[0]); e.target.value = ""; };
+el("file-input").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  const caller = callerFromFilename(f.name);
+  currentInboxId = await inboxAdd(f, caller); // 대기함에도 보관해 유실 방지
+  if (caller && (caller.phone || caller.contactName) && (!callerInfo || (!callerInfo.phone && !callerInfo.contactName))) callerInfo = caller;
+  setPendingAudio(f);
+  applyCallerInfo();
+};
 el("file-clear").onclick = clearPendingAudio;
 el("btn-direct").onclick = () => {
   el("transcript").focus();
@@ -1536,6 +1656,111 @@ function clearPendingAudio() {
   el("file-chip").classList.remove("show");
 }
 
+/* ══════════════ 정리 대기함 (받은 통화 녹음 보관·선택) ══════════════
+   통화를 바로 정리하지 않아도 다음 전화 녹음에 덮어쓰이지 않도록, 받은 녹음을
+   IndexedDB에 쌓아두고 목록에서 골라 정리한다. (여러 통의 연속 통화도 모두 보관) */
+let inboxItems = [];       // 화면용 메타데이터(blob 제외) — 최신순
+let currentInboxId = null; // 지금 폼에 불러온 대기함 항목 (저장되면 대기함에서 제거)
+let justReceivedId = null; // 방금 도착해 "지금 정리?" 물어본 항목
+
+function idbOpen() {
+  return new Promise((res, rej) => {
+    let rq;
+    try { rq = indexedDB.open("callnote-audio", 1); } catch (e) { rej(e); return; }
+    rq.onupgradeneeded = () => {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains("inbox")) db.createObjectStore("inbox", { keyPath: "id" });
+    };
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbAll() {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction("inbox", "readonly").objectStore("inbox").getAll();
+    rq.onsuccess = () => res(rq.result || []);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbGet(id) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction("inbox", "readonly").objectStore("inbox").get(id);
+    rq.onsuccess = () => res(rq.result || null);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbPut(rec) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("inbox", "readwrite");
+    tx.objectStore("inbox").put(rec);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbDel(id) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("inbox", "readwrite");
+    tx.objectStore("inbox").delete(id);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+}
+
+async function inboxRefresh() {
+  try {
+    const all = await idbAll();
+    inboxItems = all.map(r => ({ id: r.id, name: r.name, mime: r.mime, size: r.size,
+      receivedAt: r.receivedAt, phone: r.phone, contactName: r.contactName }))
+      .sort((a, b) => b.receivedAt - a.receivedAt);
+  } catch { inboxItems = []; }
+  renderInbox();
+}
+function renderInbox() {
+  const panel = el("inbox-panel"), list = el("inbox-list");
+  if (!panel) return;
+  if (!inboxItems.length) { panel.classList.add("hidden"); list.innerHTML = ""; return; }
+  el("inbox-count").textContent = `${inboxItems.length}건`;
+  list.innerHTML = inboxItems.map(it => {
+    const who = it.phone || it.contactName || it.name || "통화 녹음";
+    const sub = `${fmtDate(it.receivedAt)} · ${(it.size / 1048576).toFixed(1)}MB`;
+    return `<div class="inbox-row">
+      <div class="inbox-info"><b>${esc(who)}</b><span>${esc(sub)}</span></div>
+      <button class="btn primary inbox-go" data-id="${esc(it.id)}">정리</button>
+      <button class="btn inbox-del" data-id="${esc(it.id)}" aria-label="이 녹음 삭제">✕</button>
+    </div>`;
+  }).join("");
+  panel.classList.remove("hidden");
+  list.querySelectorAll(".inbox-go").forEach(b => b.onclick = () => inboxLoadToForm(b.dataset.id));
+  list.querySelectorAll(".inbox-del").forEach(b => b.onclick = () => inboxDelete(b.dataset.id));
+}
+async function inboxAdd(file, caller) {
+  const id = "rec" + Date.now() + Math.random().toString(36).slice(2, 7);
+  const rec = { id, name: file.name || "통화녹음.m4a", mime: file.type || guessMime(file), size: file.size,
+    receivedAt: Date.now(), phone: (caller && caller.phone) || "", contactName: (caller && caller.contactName) || "", blob: file };
+  try { await idbPut(rec); } catch { /* 저장 실패해도 이후 흐름은 진행 */ }
+  await inboxRefresh();
+  return id;
+}
+async function inboxDelete(id) {
+  if (!confirm("정리하지 않은 이 통화 녹음을 지울까요?")) return;
+  try { await idbDel(id); } catch {}
+  if (currentInboxId === id) currentInboxId = null;
+  await inboxRefresh();
+}
+async function inboxLoadToForm(id) {
+  let rec; try { rec = await idbGet(id); } catch {}
+  if (!rec || !rec.blob) { showStatus("ai-status", "err", "녹음을 불러오지 못했습니다 — 다시 시도해 주세요."); await inboxRefresh(); return; }
+  const file = new File([rec.blob], rec.name, { type: rec.mime });
+  openEdit(null); // 이 통화용 새 카드 시작
+  if (rec.phone || rec.contactName) callerInfo = { phone: rec.phone, callType: "", contactName: rec.contactName };
+  currentInboxId = id;
+  setPendingAudio(file);
+  applyCallerInfo();
+  el("btn-ai").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 function guessMime(file) {
   if (file.type) return file.type;
   const ext = (file.name.split(".").pop() || "").toLowerCase();
@@ -1550,44 +1775,46 @@ function fileToBase64(file) {
     r.readAsDataURL(file);
   });
 }
+// 녹음 파일의 재생 길이(초)를 읽는다. 못 읽으면 NaN (그 경우 건너뛰지 않고 저장 유지)
+function audioDuration(file) {
+  return new Promise(resolve => {
+    try {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("audio");
+      a.preload = "metadata";
+      let done = false;
+      const finish = d => { if (done) return; done = true; try { URL.revokeObjectURL(url); } catch {} resolve(d); };
+      a.onloadedmetadata = () => finish(isFinite(a.duration) && a.duration > 0 ? a.duration : NaN);
+      a.onerror = () => finish(NaN);
+      setTimeout(() => finish(NaN), 4000); // 안전 타임아웃
+      a.src = url;
+    } catch { resolve(NaN); }
+  });
+}
+var SHORT_CALL_SEC = 10; // 이 값(초) 미만의 아주 짧은 통화는 자동 건너뜀 (설정에서 끌 수 있음)
 
 // 큰 녹음 파일은 Gemini Files API로 먼저 업로드하고, 그 파일을 "참조"만 해서 정리 요청을 보낸다.
-// (구글의 표준 재개 가능 업로드 프로토콜 — 인라인 base64와 달리 요청 크기 제한(~20MB)이 없다)
+// multipart 요청으로 업로드하여 브라우저/웹뷰에서 업로드 응답 헤더를 읽을 필요가 없다.
 async function uploadAudioToGemini(file, apiKey, mimeType) {
-  const startRes = await fetch(
-    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: "POST",
-      headers: {
-        "X-Goog-Upload-Protocol": "resumable",
-        "X-Goog-Upload-Command": "start",
-        "X-Goog-Upload-Header-Content-Length": String(file.size),
-        "X-Goog-Upload-Header-Content-Type": mimeType,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ file: { display_name: (file.name || "recording").slice(0, 100) } }),
-    }
-  );
-  if (!startRes.ok) {
-    let msg = "";
-    try { msg = (await startRes.json()).error?.message || ""; } catch {}
-    throw new Error(`녹음 파일 업로드 시작 실패 (HTTP ${startRes.status})` + (msg ? `: ${msg.slice(0, 160)}` : ""));
-  }
-  const uploadUrl = startRes.headers.get("x-goog-upload-url");
-  if (!uploadUrl) throw new Error("녹음 파일 업로드 주소를 받지 못했습니다 — 잠시 후 다시 시도해 주세요.");
+  const base = "https://generativelanguage.googleapis.com";
+  const mime = mimeType;
+  const boundary = "maetong" + Date.now() + Math.random().toString(36).slice(2);
+  const meta = JSON.stringify({ file: { display_name: (file.name || "call-recording").slice(0, 100) } });
+  const pre = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+              `--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`;
+  const body = new Blob([pre, file, `\r\n--${boundary}--`], { type: `multipart/related; boundary=${boundary}` });
 
-  const finalizeRes = await fetch(uploadUrl, {
-    method: "POST",
-    headers: {
-      "Content-Length": String(file.size),
-      "X-Goog-Upload-Offset": "0",
-      "X-Goog-Upload-Command": "upload, finalize",
-    },
-    body: file,
-  });
-  if (!finalizeRes.ok) throw new Error(`녹음 파일 업로드 실패 (HTTP ${finalizeRes.status})`);
-  const info = await finalizeRes.json();
-  const f = info.file || info;
+  let res;
+  try {
+    res = await fetch(`${base}/upload/v1beta/files?uploadType=multipart&key=${encodeURIComponent(apiKey)}`,
+      { method: "POST", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body });
+  } catch { throw new Error("네트워크 오류 — 인터넷 연결을 확인해 주세요."); }
+  if (!res.ok) {
+    let emsg = ""; try { emsg = (await res.json()).error?.message || ""; } catch {}
+    throw new Error(`녹음 파일 업로드 실패 (HTTP ${res.status})` + (emsg ? ": " + emsg.slice(0, 160) : ""));
+  }
+  const f = (await res.json()).file;
+  if (!f || !f.name) throw new Error("업로드 응답이 올바르지 않습니다.");
   // 삭제 실패가 AI 결과나 원래 오류를 덮어쓰지 않도록 한다.
   const cleanup = async () => {
     try {
@@ -1602,8 +1829,8 @@ async function uploadAudioToGemini(file, apiKey, mimeType) {
   };
   try {
     let state = f.state, uri = f.uri;
-    for (let tries = 0; state === "PROCESSING" && tries < 30; tries++) {
-      await new Promise((r) => setTimeout(r, 1500));
+    for (let tries = 0; state === "PROCESSING" && tries < 45; tries++) {
+      await new Promise((r) => setTimeout(r, 2000));
       try {
         const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${f.name}?key=${encodeURIComponent(apiKey)}`);
         if (!checkRes.ok) throw new Error("File status check failed");
@@ -1612,7 +1839,7 @@ async function uploadAudioToGemini(file, apiKey, mimeType) {
         uri = checkInfo.uri;
       } catch { break; }
     }
-    if (state !== "ACTIVE") throw new Error("녹음 파일 처리가 지연되고 있습니다 — 잠시 후 다시 시도해 주세요.");
+    if (state !== "ACTIVE" || !uri) throw new Error("녹음 파일 처리가 지연되고 있습니다 — 잠시 후 다시 시도해 주세요.");
     return { fileUri: uri, mimeType: f.mimeType || mimeType, cleanup };
   } catch (err) {
     await cleanup();
@@ -1718,6 +1945,7 @@ async function callGemini(parts, withTranscript) {
   }
   throw new Error(lastErr + " — 설정에서 모델명을 바꾸거나(비워두면 자동), 잠시 후 다시 시도해 주세요.");
 }
+
 
 function callerContext() {
   if (!callerInfo || !callerInfo.phone) return "";
@@ -1856,6 +2084,13 @@ function doSave() {
     lastSaveSnapshot = { isNew: true, savedId: saved.id };
   }
   saveRecords(records);
+  // 대기함에서 불러와 정리한 녹음이면, 저장 완료 시 대기함에서 제거
+  if (currentInboxId) {
+    const doneId = currentInboxId; currentInboxId = null;
+    idbDel(doneId).catch(() => {});
+    inboxItems = inboxItems.filter(x => x.id !== doneId);
+    renderInbox();
+  }
   clearDraft();
   hasUnsavedChanges = false;
   renderList();
@@ -1984,6 +2219,10 @@ function initSettings() {
   el("model").value = settings.model || "";
   el("sheet-url").value = settings.sheetUrl || "";
   el("sheet-key-input").value = settings.staffCode || "";
+  el("msg-signature").value = settings.msgSignature || "";
+  const sigPos = settings.msgSignaturePos === "head" ? "head" : "tail";
+  el("sig-pos-chips").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.pos === sigPos));
+  el("skip-short").checked = settings.skipShortCalls !== false; // 기본 ON
   renderContacts();
   applyRoleUI();
 }
@@ -1992,8 +2231,28 @@ function persistSettings() {
   settings.model = el("model").value.trim();
   settings.sheetUrl = el("sheet-url").value.trim();
   settings.staffCode = el("sheet-key-input").value.trim().toUpperCase();
+  settings.msgSignature = el("msg-signature").value.trim();
   saveSettings(settings);
 }
+el("sig-pos-chips").querySelectorAll("button").forEach(b => b.onclick = () => {
+  settings.msgSignaturePos = b.dataset.pos;
+  el("sig-pos-chips").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.pos === settings.msgSignaturePos));
+  saveSettings(settings);
+  renderList();
+});
+el("btn-save-sig").onclick = () => {
+  persistSettings();
+  renderList(); // 카드의 문자 링크 미리보기 갱신
+  const pos = settings.msgSignaturePos === "head" ? "머릿말(앞)" : "꼬리말(뒤)";
+  showStatus("sig-status", "ok", settings.msgSignature ? `저장되었습니다 — 사무소 정보가 ${pos}로 붙습니다.` : "저장되었습니다 — 사무소 정보 없이 보냅니다.");
+};
+el("btn-save-rule").onclick = () => {
+  settings.skipShortCalls = el("skip-short").checked;
+  saveSettings(settings);
+  showStatus("rule-status", "ok", settings.skipShortCalls
+    ? "저장되었습니다 — 10초 미만 통화는 자동으로 건너뜁니다."
+    : "저장되었습니다 — 모든 통화를 저장합니다(자동 건너뛰기 끔).");
+};
 
 /* ── 역할(사장/직원)과 접근 키 ── */
 function currentRole() { return settings.sheetRole === "staff" ? "staff" : "admin"; }
@@ -2434,6 +2693,35 @@ async function testSheetConnection() {
 }
 el("btn-sheet-test").onclick = testSheetConnection;
 
+// 시작 시 / 앱 복귀 시 시트 연결을 조용히 점검해, 문제가 있으면 상단 경고 배너를 띄운다
+// (저장 실패가 몇 주씩 조용히 지나가는 것을 방지 — 앱은 쓰기 응답을 못 읽어 스스로는 실패를 모름)
+let lastAutoCheckAt = 0;
+async function autoCheckSheetConnection() {
+  const url = (settings.sheetUrl || "").trim();
+  if (!url) { el("sheet-alert").hidden = true; return; }   // 시트 미연결(개인 사용)은 경고 아님
+  if (navigator.onLine === false) return;                  // 오프라인이면 판단 보류
+  lastAutoCheckAt = Date.now();
+  let ok = false;
+  try {
+    const res = await fetch(sheetGetUrl({}));
+    const text = await res.text();
+    let j = null; try { j = JSON.parse(text); } catch {}
+    ok = !!(j && j.ok);
+  } catch { ok = false; }
+  settings.lastSheetTestOk = ok;
+  saveSettings(settings);
+  refreshConnSummary();
+  el("sheet-alert").hidden = ok;
+}
+el("sheet-alert-fix").onclick = () => {
+  stopMic(); show("settings"); loadStaffList(false); refreshConnSummary();
+  setTimeout(() => { const box = el("sheet-url"); if (box) box.scrollIntoView({ behavior: "smooth", block: "center" }); testSheetConnection(); }, 80);
+};
+// 앱으로 다시 돌아올 때도 점검 (과도한 호출 방지: 10분 간격)
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - lastAutoCheckAt > 600000) autoCheckSheetConnection();
+});
+
 /* ══════════════ 직원 관리 (사장 전용) ══════════════ */
 function inviteText(name, code) {
   return `📞 매통이 초대 — ${name}님
@@ -2668,13 +2956,32 @@ async function checkShared() {
   } catch (e) { /* 캐시 접근 불가 환경이면 조용히 무시 */ }
 }
 
-el("share-yes").onclick = () => {
+el("share-yes").onclick = async () => {
   el("share-modal").classList.add("hidden");
+  if (justReceivedId) { const id = justReceivedId; justReceivedId = null; await inboxLoadToForm(id); }
   el("btn-ai").click();
 };
 el("share-no").onclick = () => {
   el("share-modal").classList.add("hidden");
-  showStatus("ai-status", "info", "준비되어 있어요 — 언제든 [🤖 AI 자동 정리]를 누르면 됩니다.");
+  if (justReceivedId) {
+    justReceivedId = null;
+    showToast("📥 정리 대기함에 보관했어요.\n홈(목록) 화면 위쪽에서 언제든 정리할 수 있어요.");
+  } else {
+    showStatus("ai-status", "info", "준비되어 있어요 — 언제든 [🤖 AI 자동 정리]를 누르면 됩니다.");
+  }
+};
+// 🗑 저장 안 함 — 방금 도착한 통화 녹음을 저장하지 않고 버린다 (스팸·개인 전화 등)
+el("share-discard").onclick = async () => {
+  el("share-modal").classList.add("hidden");
+  if (justReceivedId) {
+    const id = justReceivedId; justReceivedId = null;
+    try { await idbDel(id); } catch {}
+    if (currentInboxId === id) currentInboxId = null;
+    await inboxRefresh();
+  } else {
+    clearPendingAudio(); el("transcript").value = "";
+  }
+  showToast("🗑 이 통화는 저장하지 않았습니다.");
 };
 
 /* ══════════════ 네이티브 안드로이드 앱 브릿지 ══════════════
@@ -2804,25 +3111,31 @@ el("btn-status-check").onclick = async () => {
 };
 window.__nativeShareBegin = (name, mime) => { nativeShare = { name, mime, parts: [] }; };
 window.__nativeShareChunk = (b64) => { if (nativeShare) nativeShare.parts.push(b64); };
-window.__nativeShareEnd = () => {
+window.__nativeShareEnd = async () => {
   if (!nativeShare) return;
+  const share = nativeShare; nativeShare = null;
   try {
-    const bin = atob(nativeShare.parts.join(""));
+    const bin = atob(share.parts.join(""));
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const keepCaller = callerInfo; // openEdit이 초기화하므로 보관
-    openEdit(null);
-    callerInfo = keepCaller;
-    applyCallerInfo(); // 걸려온/건 번호를 연락처 칸에 미리 채움
-    setPendingAudio(new File([bytes], nativeShare.name || "통화녹음.m4a", { type: nativeShare.mime || "audio/mp4" }));
-    if (pendingAudio) { // 크기 초과 등으로 거부되지 않았을 때만 팝업
-      el("share-modal-desc").textContent = `"${pendingAudio.name}" 녹음을 AI가 받아쓰고 상담 카드로 정리할까요?`;
-      el("share-modal").classList.remove("hidden");
+    const file = new File([bytes], share.name || "통화녹음.m4a", { type: share.mime || "audio/mp4" });
+    // 아주 짧은 통화(기본 10초 미만) 자동 건너뛰기 — 설정에서 끌 수 있음. 길이를 못 읽으면 저장 유지.
+    if (settings.skipShortCalls !== false) {
+      const dur = await audioDuration(file);
+      if (isFinite(dur) && dur < SHORT_CALL_SEC) {
+        showToast(`📵 ${Math.round(dur)}초짜리 짧은 통화는 저장하지 않았어요. (설정에서 끌 수 있어요)`);
+        return;
+      }
     }
+    // 걸려온 번호(통화기록) 우선, 없으면 파일명에서 추출
+    const caller = (callerInfo && (callerInfo.phone || callerInfo.contactName)) ? callerInfo : callerFromFilename(file.name);
+    // 무조건 대기함에 먼저 보관 — 편집 중이던 내용이나 이전 녹음을 절대 덮어쓰지 않는다
+    justReceivedId = await inboxAdd(file, caller);
+    const who = (caller && (caller.phone || caller.contactName)) || file.name;
+    el("share-modal-desc").textContent = `"${who}" 통화 녹음이 도착했어요. 지금 AI로 정리할까요?\n(나중에 정리 대기함에서 골라도 됩니다)`;
+    el("share-modal").classList.remove("hidden");
   } catch (e) {
     showStatus("ai-status", "err", "녹음 파일을 불러오지 못했습니다 — 다시 시도해 주세요.");
-  } finally {
-    nativeShare = null;
   }
 };
 
@@ -2832,6 +3145,8 @@ initSettings();
 renderList();
 checkShared();
 refreshConnSummary();
+inboxRefresh(); // 지난번에 정리 안 하고 남겨둔 통화 녹음 대기함 복원
+autoCheckSheetConnection(); // 시트 연결 자동 점검 → 문제 시 상단 경고 배너
 /* ══════════════ 이용권 (30일 무료 체험 + 이용코드) ══════════════ */
 // RSAR 라이선스 서버 웹 앱 URL — 판매자(RSAR)의 '매통이 라이선스' 시트와 연결됨.
 // 비어 있으면 기기 자체 판정(체험 30일 + 코드 형식 검사)으로 동작한다.
@@ -3049,4 +3364,3 @@ if (window.visualViewport) {
 </script>
 </body>
 </html>
-

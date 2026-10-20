@@ -10,15 +10,14 @@ function setup({ state = 'ACTIVE', check = 'ACTIVE', deletion = 200, aiError, si
   const events = [], warnings = [], nodes = {};
   const ctx = vm.createContext({
     console: { warn: (...args) => warnings.push(args) },
-    setTimeout: fn => fn(), encodeURIComponent,
+    setTimeout: fn => fn(), encodeURIComponent, Blob,
     fetch: async (url, options = {}) => {
       if (options.method === 'DELETE') {
         events.push('delete');
         if (deletion === 'network') throw new Error('secret URL');
         return response({}, deletion);
       }
-      if (url.includes('/upload/')) { events.push('start'); return { ok: true, headers: { get: () => 'https://upload.test' } }; }
-      if (url === 'https://upload.test') { events.push('finalize'); return response({ file: { name: 'files/test', state, uri: 'test-uri', mimeType: 'audio/mp4' } }); }
+      if (url.includes('/upload/')) { events.push('upload'); return response({ file: { name: 'files/test', state, uri: 'test-uri', mimeType: 'audio/mp4' } }); }
       events.push('check');
       if (check === 'network') throw new Error('network');
       if (check === 'http') return response({}, 500);
@@ -46,7 +45,7 @@ test('all inline scripts parse', () => {
 });
 test('AI success awaits one DELETE after generation', async () => {
   const s = setup(); assert.equal((await s.run()).summary, 'ok');
-  assert.deepEqual(s.events, ['start', 'finalize', 'ai-file', 'delete']);
+  assert.deepEqual(s.events, ['upload', 'ai-file', 'delete']);
 });
 for (const message of ['HTTP 429', 'HTTP 500', 'network error', 'invalid JSON', 'empty response']) {
   test('AI failure cleans up and preserves original error: ' + message, async () => {
@@ -76,11 +75,16 @@ for (const check of ['FAILED', 'PROCESSING', 'network', 'http']) {
 }
 test('processing becomes ACTIVE before AI and DELETE', async () => {
   const s = setup({ state: 'PROCESSING' }); await s.run();
-  assert.deepEqual(s.events, ['start', 'finalize', 'check', 'ai-file', 'delete']);
+  assert.deepEqual(s.events, ['upload', 'check', 'ai-file', 'delete']);
 });
 for (const size of [1048576, 12 * 1048576, 12 * 1048576 + 1, null]) {
   test('routing boundary: ' + size, async () => {
     const s = setup({ size }); await s.run();
-    assert.deepEqual(s.events, size === null ? ['ai-text'] : size <= 12 * 1048576 ? ['base64', 'ai-inline'] : ['start', 'finalize', 'ai-file', 'delete']);
+    assert.deepEqual(s.events, size === null ? ['ai-text'] : size <= 12 * 1048576 ? ['base64', 'ai-inline'] : ['upload', 'ai-file', 'delete']);
   });
 }
+
+test('only one upload implementation and no conflict markers', () => {
+  assert.equal((html.match(/async function uploadAudioToGemini\(/g) || []).length, 1);
+  assert.ok(!/^(<<<<<<<|=======|>>>>>>>)/m.test(html));
+});
