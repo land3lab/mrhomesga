@@ -3297,6 +3297,140 @@ window.__nativeShareEnd = async () => {
   }
 };
 
+
+/* ══════════════ 자동·선택 변환: 기존 편집 내용을 덮어쓰지 않고 AI 초안 생성 ══════════════ */
+const selectedInboxIds = new Set();
+const conversionTasks = [];
+let conversionBusy = false;
+
+function updateInboxSelectLabel() {
+  const button = el("inbox-convert-selected");
+  if (!button) return;
+  const ready = inboxItems.filter(x => selectedInboxIds.has(x.id) &&
+    !records.some(r => r.sourceInboxId === x.id && r.reviewPending));
+  button.textContent = "선택한 녹음 AI 변환 (" + ready.length + "건)";
+  button.disabled = ready.length === 0 || !!settings.aiBillingBlocked;
+}
+el("inbox-select-all").onclick = () => {
+  const available = inboxItems.filter(x => !records.some(r => r.sourceInboxId === x.id && r.reviewPending));
+  const allSelected = available.length > 0 && available.every(x => selectedInboxIds.has(x.id));
+  available.forEach(x => allSelected ? selectedInboxIds.delete(x.id) : selectedInboxIds.add(x.id));
+  renderInbox();
+};
+el("inbox-convert-selected").onclick = () => {
+  enqueueInboxConversions(inboxItems.filter(x => selectedInboxIds.has(x.id)).map(x => x.id), false);
+};
+
+function enqueueInboxConversions(ids, automatic) {
+  if (automatic && settings.conversionMode !== "auto") return;
+  if (settings.aiBillingBlocked) {
+    showToast("💳 Gemini 잔액 부족으로 변환이 중지됐습니다. ⚙️ 설정에서 결제 상태를 확인해 주세요.");
+    return;
+  }
+  if (!(settings.apiKey || "").trim()) {
+    showToast("⚙️ Gemini API 키를 먼저 등록해야 AI 변환을 사용할 수 있습니다.");
+    return;
+  }
+  ids.forEach(id => {
+    if (!id || records.some(r => r.sourceInboxId === id && r.reviewPending) ||
+      conversionTasks.some(task => task.id === id)) return;
+    conversionTasks.push({ id: id, automatic: automatic });
+  });
+  if (!conversionBusy) void drainConversionQueue();
+}
+
+async function convertInboxRecording(id) {
+  const previous = records.find(r => r.sourceInboxId === id && r.reviewPending);
+  if (previous) return previous;
+  const rec = await idbGet(id);
+  if (!rec || !rec.blob) throw new Error("대기함의 녹음 파일을 찾을 수 없습니다.");
+  if (rec.size > 200 * 1024 * 1024) throw new Error("녹음 파일이 200MB를 초과합니다.");
+  const file = new File([rec.blob], rec.name || "통화녹음.m4a", { type: rec.mime || "audio/mp4" });
+  const mime = guessMime(file);
+  const context = (rec.phone ? "\n통화 상대방 전화번호(통화기록): " + rec.phone : "") +
+    (rec.contactName ? "\n연락처에 저장된 이름: " + rec.contactName : "") +
+    (rec.note ? "\n통화 관련 참고 메모: " + rec.note : "");
+  const prompt = PROMPT + PROMPT_AUDIO_EXTRA + context;
+  let result;
+  if (file.size > INLINE_MAX_BYTES) {
+    const uploaded = await uploadAudioToGemini(file, (settings.apiKey || "").trim(), mime);
+    try {
+      result = await callGemini([
+        { text: prompt },
+        { fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.fileUri } }
+      ], true);
+    } finally {
+      await uploaded.cleanup();
+    }
+  } else {
+    result = await callGemini([
+      { text: prompt },
+      { inlineData: { mimeType: mime, data: await fileToBase64(file) } }
+    ], true);
+  }
+  const fields = emptyFields();
+  FIELDS.forEach(f => {
+    const v = result[f.k];
+    if (v == null) return;
+    if (LIST_KEYS.includes(f.k)) fields[f.k] = Array.isArray(v) ? v.filter(Boolean) : String(v).split("\n").filter(Boolean);
+    else if (f.type === "select" && f.options && !f.options.includes(String(v))) fields[f.k] = f.options.includes("기타") ? "기타" : "";
+    else fields[f.k] = String(v);
+  });
+  if (!fields.phone && rec.phone) fields.phone = rec.phone;
+  if (!fields.name && rec.contactName) fields.name = rec.contactName;
+  const now = Date.now();
+  const draft = {
+    id: "r" + now + Math.random().toString(36).slice(2, 7),
+    createdAt: rec.receivedAt || now, updatedAt: now,
+    fields: fields, transcript: result.transcript || "",
+    reviewPending: true, sourceInboxId: id
+  };
+  records.push(draft);
+  try { saveRecords(records); }
+  catch { records.pop(); throw new Error("기기 저장 공간이 부족해 AI 초안을 저장하지 못했습니다. 녹음은 대기함에 보관됩니다."); }
+  try { await idbPut(Object.assign({}, rec, { convertedRecordId: draft.id })); } catch {}
+  selectedInboxIds.delete(id);
+  await inboxRefresh();
+  renderList();
+  return draft;
+}
+async function drainConversionQueue() {
+  if (conversionBusy) return;
+  conversionBusy = true;
+  let completed = 0;
+  try {
+    while (conversionTasks.length) {
+      const task = conversionTasks.shift();
+      if (task.automatic && settings.conversionMode !== "auto") continue;
+      if (settings.aiBillingBlocked) break;
+      const item = inboxItems.find(x => x.id === task.id);
+      showStatus("inbox-status", "info", "🎙 AI 변환 중: " +
+        ((item && (item.phone || item.contactName || item.name)) || "통화 녹음") +
+        " · 남은 " + conversionTasks.length + "건");
+      try {
+        await convertInboxRecording(task.id);
+        completed++;
+      } catch (err) {
+        const info = friendlyAiError(err);
+        showStatus("inbox-status", "err", info.friendly);
+        if (settings.aiBillingBlocked || /HTTP 429|RESOURCE_EXHAUSTED|quota exceeded/i.test((err && err.message) || "")) {
+          conversionTasks.length = 0; // 잔액·한도 부족 시 반복 재시도 방지
+          if (settings.aiBillingBlocked) showToast("💳 잔액 부족으로 변환이 중지됐습니다. 실패한 녹음은 대기함에 남아 있습니다.");
+          break;
+        }
+      }
+    }
+  } finally {
+    conversionBusy = false;
+    updateInboxSelectLabel();
+    if (completed) {
+      showStatus("inbox-status", "ok", "✅ " + completed + "건 변환 완료. 목록에서 '검토 필요' 카드를 확인한 뒤 저장해 주세요.");
+      showToast("✅ AI 변환 " + completed + "건 완료 — 상담카드 확인 필요");
+    }
+  }
+}
+updateConversionModeStatus();
+
 /* ══════════════ 시작 ══════════════ */
 buildForm();
 initSettings();
