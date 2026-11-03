@@ -390,6 +390,11 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
 <section id="view-list" role="tabpanel" aria-labelledby="tab-list">
   <div class="inbox hidden" id="inbox-panel">
     <div class="inbox-head">📥 정리 안 한 통화 녹음 <span id="inbox-count"></span> — 아래에서 골라 정리하세요</div>
+    <div class="btnbar" style="margin:6px 0 8px">
+      <button class="btn" id="inbox-select-all" type="button">전체 선택</button>
+      <button class="btn primary" id="inbox-convert-selected" type="button">선택한 녹음 AI 변환 (0건)</button>
+    </div>
+    <div class="status" id="inbox-status" role="status" aria-live="polite"></div>
     <div id="inbox-list"></div>
   </div>
   <input type="search" id="search" placeholder="이름 · 연락처 · 단지 · 내용 검색" aria-label="기록 검색">
@@ -528,7 +533,7 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
   <div class="card">
     <h2>🤖 AI 설정 (Google Gemini)</h2>
     <p class="hint" style="margin-top:0">
-      녹음 파일 전사와 자동 정리에 Google Gemini API를 사용합니다 (무료 등급으로 충분).
+      녹음 파일 전사와 자동 정리에 Google Gemini API를 사용합니다 (사용량·요금제에 따라 비용이 발생할 수 있음).
       <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>에서
       구글 계정으로 로그인 → [API 키 만들기] → 아래에 붙여넣기.
     </p>
@@ -546,6 +551,24 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
     <div class="status" id="gemini-diagnostic-status" role="status" aria-live="polite"></div>
     <p class="hint">키는 이 기기 브라우저(localStorage)에만 저장됩니다. [AI 자동 정리] 또는 진단 버튼을 누르면
     통화 내용/녹음 또는 진단용 무음 오디오가 Google Gemini API로 전송되고, 그 외에는 모든 데이터가 기기 안에만 있습니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>🎙 통화 녹음 변환 모드</h2>
+    <label class="f" for="conversion-mode">변환 방식</label>
+    <select id="conversion-mode">
+      <option value="select">선택변환 — 원하는 통화만 골라 AI 정리 (기본)</option>
+      <option value="auto">자동변환 — 새로 수신된 녹음 자동 AI 정리</option>
+    </select>
+    <p class="hint">자동변환에서는 새 녹음이 매통이에 도착할 때 Google Gemini로 전송됩니다. API 사용량·요금이 발생할 수 있으며, 앱이 종료·절전 상태이면 즉시 처리되지 않을 수 있습니다.</p>
+    <p class="hint"><b>두 모드 모두 생성된 상담카드는 '검토 필요'로 기기에 임시 보관</b>합니다. 매물장(구글시트)에는 [저장 완료]로 확인한 후에만 전송합니다.</p>
+    <div class="btnbar"><button class="btn primary" id="btn-save-conversion-mode" type="button">변환 모드 저장</button></div>
+    <div class="status" id="conversion-mode-status" role="status" aria-live="polite"></div>
+    <div class="status err" id="ai-billing-warning" role="alert">
+      <b>Gemini 선불 크레딧이 소진되어 AI 변환이 일시 중지됐습니다.</b>
+      <p><a href="https://aistudio.google.com/billing" target="_blank" rel="noopener">Google AI Studio 결제·잔액 확인</a></p>
+      <button class="btn" type="button" id="btn-resume-conversion">충전 완료 후 변환 재개</button>
+    </div>
   </div>
 
   <div class="card">
@@ -1299,6 +1322,7 @@ function recCardHtml(r) {
       <div class="top">
         ${shareMode ? `<input type="checkbox" class="selbox" ${selectedIds.has(r.id) ? "checked" : ""} style="width:19px; height:19px; pointer-events:none; accent-color:var(--accent)">` : ""}
         <span class="badge b-${esc(f.category)}">${esc(f.category)}</span>
+        ${r.reviewPending ? '<span class="badge" style="background:var(--orange-soft);color:var(--orange-ink)">AI 초안 · 검토 필요</span>' : ""}
         <span class="who">${esc(f.name || "이름 미상")}</span>
         ${!shareMode ? `<button class="star-btn ${r.starred ? "on" : ""}" data-star="${r.id}" aria-label="${r.starred ? "중요 표시 해제" : "중요 표시"}" onclick="event.stopPropagation()">${r.starred ? "★" : "☆"}</button>` : ""}
       </div>
@@ -1481,6 +1505,7 @@ function openEdit(id) {
   hasUnsavedChanges = false;
   checkDraftRecovery();
   show("edit");
+  if (rec && rec.reviewPending) showStatus("ai-status", "info", "AI 변환 초안입니다. 통화 내용과 매물 정보를 확인하고 [저장 완료]를 눌러야 구글시트에 전송됩니다.");
 }
 
 /* ══════════════ 임시저장 (작성 중 기록 유실 방지) ══════════════ */
@@ -1728,20 +1753,27 @@ function renderInbox() {
   list.innerHTML = inboxItems.map(it => {
     const who = it.phone || it.contactName || it.name || "통화 녹음";
     const sub = `${fmtDate(it.receivedAt)} · ${(it.size / 1048576).toFixed(1)}MB`;
+    const review = records.some(r => r.sourceInboxId === it.id && r.reviewPending);
     return `<div class="inbox-row">
-      <div class="inbox-info"><b>${esc(who)}</b><span>${esc(sub)}</span></div>
-      <button class="btn primary inbox-go" data-id="${esc(it.id)}">정리</button>
+      <input type="checkbox" class="inbox-pick" data-id="${esc(it.id)}" ${review ? "disabled" : ""} ${selectedInboxIds.has(it.id) ? "checked" : ""} aria-label="이 통화 선택" style="width:20px;height:20px;flex:none;accent-color:var(--accent)">
+      <div class="inbox-info"><b>${esc(who)}</b><span>${esc(sub)}${review ? " · AI 변환 완료 (검토 필요)" : ""}</span></div>
+      <button class="btn primary inbox-go" data-id="${esc(it.id)}">${review ? "카드 확인" : "직접 정리"}</button>
       <button class="btn inbox-del" data-id="${esc(it.id)}" aria-label="이 녹음 삭제">✕</button>
     </div>`;
   }).join("");
   panel.classList.remove("hidden");
   list.querySelectorAll(".inbox-go").forEach(b => b.onclick = () => inboxLoadToForm(b.dataset.id));
+  list.querySelectorAll(".inbox-pick").forEach(c => c.onchange = () => {
+    c.checked ? selectedInboxIds.add(c.dataset.id) : selectedInboxIds.delete(c.dataset.id);
+    updateInboxSelectLabel();
+  });
+  updateInboxSelectLabel();
   list.querySelectorAll(".inbox-del").forEach(b => b.onclick = () => inboxDelete(b.dataset.id));
 }
-async function inboxAdd(file, caller) {
+async function inboxAdd(file, caller, note) {
   const id = "rec" + Date.now() + Math.random().toString(36).slice(2, 7);
   const rec = { id, name: file.name || "통화녹음.m4a", mime: file.type || guessMime(file), size: file.size,
-    receivedAt: Date.now(), phone: (caller && caller.phone) || "", contactName: (caller && caller.contactName) || "", blob: file };
+    receivedAt: Date.now(), phone: (caller && caller.phone) || "", contactName: (caller && caller.contactName) || "", note: note || "", blob: file };
   try { await idbPut(rec); } catch { /* 저장 실패해도 이후 흐름은 진행 */ }
   await inboxRefresh();
   return id;
@@ -1749,10 +1781,13 @@ async function inboxAdd(file, caller) {
 async function inboxDelete(id) {
   if (!confirm("정리하지 않은 이 통화 녹음을 지울까요?")) return;
   try { await idbDel(id); } catch {}
+  selectedInboxIds.delete(id);
   if (currentInboxId === id) currentInboxId = null;
   await inboxRefresh();
 }
 async function inboxLoadToForm(id) {
+  const reviewRecord = records.find(r => r.sourceInboxId === id && r.reviewPending);
+  if (reviewRecord) { guardLeave(() => openEdit(reviewRecord.id)); return; }
   let rec; try { rec = await idbGet(id); } catch {}
   if (!rec || !rec.blob) { showStatus("ai-status", "err", "녹음을 불러오지 못했습니다 — 다시 시도해 주세요."); await inboxRefresh(); return; }
   const file = new File([rec.blob], rec.name, { type: rec.mime });
@@ -1905,6 +1940,7 @@ const MODEL_FALLBACKS = [
 async function callGemini(parts, withTranscript) {
   const key = (settings.apiKey || "").trim();
   if (!key) throw new Error("NO_KEY");
+  if (settings.aiBillingBlocked) throw new Error("BILLING_PAUSED");
   const tryList = [];
   const add = m => { m = (m || "").trim(); if (m && !tryList.includes(m)) tryList.push(m); };
   add(settings.model);        // 사용자가 직접 지정한 모델 우선
@@ -1940,7 +1976,8 @@ async function callGemini(parts, withTranscript) {
 
     let emsg = "";
     try { emsg = (await res.json()).error?.message || ""; } catch {}
-    lastErr = `HTTP ${res.status}` + (emsg ? ": " + emsg.slice(0, 160) : "");
+    lastErr = `HTTP ${res.status}` + (emsg ? ": " + emsg.slice(0, 300) : "");
+    if (res.status === 402) { settings.aiBillingBlocked = true; saveSettings(settings); updateConversionModeStatus(); }
     // 모델이 없거나 못 쓰는 경우만 다음 후보로. 키·권한·한도 문제면 즉시 중단.
     const modelIssue = res.status === 404 ||
       /not found|not available|no longer|unsupported|not supported|does not exist/i.test(emsg);
@@ -1974,7 +2011,16 @@ function renderAiSteps(steps, currentIdx) {
 function hideAiSteps() { el("ai-steps").classList.remove("show"); el("ai-steps").innerHTML = ""; }
 function friendlyAiError(err) {
   const msg = (err && err.message) || String(err);
-  if (msg === "NO_KEY") return { friendly: "Gemini API 키가 없습니다. [⚙️ 설정] 탭에서 키를 먼저 등록해 주세요 (1분, 무료).", detail: "" };
+  if (msg === "NO_KEY") return { friendly: "Gemini API 키가 없습니다. [⚙️ 설정] 탭에서 키를 먼저 등록해 주세요.", detail: "" };
+  if (msg === "BILLING_PAUSED" || /HTTP 402|prepayment credits are depleted/i.test(msg)) {
+    settings.aiBillingBlocked = true;
+    saveSettings(settings);
+    updateConversionModeStatus();
+    return { friendly: "Gemini 선불 크레딧이 소진되어 AI 변환을 중지했습니다. ⚙️ 설정 → 변환 모드에서 결제 잔액을 확인하고 충전 후 '변환 재개'를 누르세요. 모델 변경이나 단순 재시도로 해결되지 않습니다.", detail: msg };
+  }
+  if (/HTTP 429|RESOURCE_EXHAUSTED|quota exceeded/i.test(msg)) {
+    return { friendly: "Gemini API 요청 한도에 도달했습니다. 프로젝트 사용량·할당량을 확인한 뒤 다시 시도해 주세요.", detail: msg };
+  }
   if (/녹음 파일 업로드|녹음 파일 처리/.test(msg)) return { friendly: "녹음 파일 업로드에 실패했습니다. 파일이 큰 경우 와이파이가 있는 곳에서 다시 시도해 보세요.", detail: msg };
   if (/네트워크 오류/.test(msg)) return { friendly: "인터넷 연결을 확인한 뒤 다시 시도해 주세요.", detail: msg };
   return { friendly: "AI 정리에 실패했습니다. 통화 내용을 다시 확인하거나 잠시 후 다시 시도해 주세요.", detail: msg };
@@ -2051,7 +2097,7 @@ el("btn-ai").onclick = async () => {
     const { friendly, detail } = friendlyAiError(err);
     const n = el("ai-status");
     n.className = "status show err";
-    n.innerHTML = esc(friendly) + (detail ? `<details class="err-detail"><summary>자세히 보기</summary>${esc(detail)}</details>` : "");
+    n.innerHTML = esc(friendly) + (/HTTP 402|BILLING_PAUSED|prepayment credits/i.test(detail || "") ? '<p><a href="https://aistudio.google.com/billing" target="_blank" rel="noopener">💳 Gemini 결제·잔액 확인</a></p>' : "") + (detail ? `<details class="err-detail"><summary>자세히 보기</summary>${esc(detail)}</details>` : "");
   } finally {
     btn.disabled = false;
     aiProcessing = false;
@@ -2070,7 +2116,7 @@ function doSave() {
     return;
   }
   const now = Date.now();
-  let saved, isNew;
+  let saved, isNew, reviewSourceId = null;
   if (editingId) {
     saved = records.find(x => x.id === editingId);
     isNew = false;
@@ -2080,6 +2126,7 @@ function doSave() {
       prevTranscript: saved.transcript, prevUpdatedAt: saved.updatedAt,
     };
     saved.fields = fields; saved.transcript = transcript; saved.updatedAt = now;
+    if (saved.reviewPending) { saved.reviewPending = false; reviewSourceId = saved.sourceInboxId || null; }
   } else {
     isNew = true;
     saved = { id: "r" + now + Math.random().toString(36).slice(2, 7), createdAt: now, updatedAt: now, fields, transcript };
@@ -2087,6 +2134,12 @@ function doSave() {
     lastSaveSnapshot = { isNew: true, savedId: saved.id };
   }
   saveRecords(records);
+  if (reviewSourceId) {
+    idbDel(reviewSourceId).catch(() => {});
+    inboxItems = inboxItems.filter(x => x.id !== reviewSourceId);
+    selectedInboxIds.delete(reviewSourceId);
+    renderInbox();
+  }
   // 대기함에서 불러와 정리한 녹음이면, 저장 완료 시 대기함에서 제거
   if (currentInboxId) {
     const doneId = currentInboxId; currentInboxId = null;
@@ -2281,6 +2334,8 @@ function initSettings() {
   const sigPos = settings.msgSignaturePos === "head" ? "head" : "tail";
   el("sig-pos-chips").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.pos === sigPos));
   el("skip-short").checked = settings.skipShortCalls !== false; // 기본 ON
+  el("conversion-mode").value = settings.conversionMode === "auto" ? "auto" : "select";
+  renderAiBillingWarning();
   renderContacts();
   applyRoleUI();
 }
@@ -2312,6 +2367,29 @@ el("btn-save-rule").onclick = () => {
     : "저장되었습니다 — 모든 통화를 저장합니다(자동 건너뛰기 끔).");
 };
 
+
+function renderAiBillingWarning() {
+  const box = el("ai-billing-warning");
+  if (box) box.classList.toggle("show", !!settings.aiBillingBlocked);
+}
+function updateConversionModeStatus() {
+  const mode = settings.conversionMode === "auto" ? "자동변환" : "선택변환";
+  showStatus("conversion-mode-status", settings.aiBillingBlocked ? "err" : "info",
+    mode + (settings.aiBillingBlocked ? " · Gemini 결제 잔액 부족으로 변환 중지" : " 모드로 설정되어 있습니다."));
+  renderAiBillingWarning();
+}
+el("btn-save-conversion-mode").onclick = () => {
+  settings.conversionMode = el("conversion-mode").value === "auto" ? "auto" : "select";
+  saveSettings(settings);
+  updateConversionModeStatus();
+  showToast(settings.conversionMode === "auto" ? "새로 도착하는 녹음을 자동 AI 변환합니다. (요금 발생 가능)" : "선택변환 모드로 변경했습니다.");
+};
+el("btn-resume-conversion").onclick = () => {
+  settings.aiBillingBlocked = false;
+  saveSettings(settings);
+  updateConversionModeStatus();
+  showToast("Gemini 변환을 다시 사용할 수 있습니다. (잔액이 부족하면 다시 중지됩니다.)");
+};
 /* ── 역할(사장/직원)과 접근 키 ── */
 function currentRole() { return settings.sheetRole === "staff" ? "staff" : "admin"; }
 function myKey() { return currentRole() === "staff" ? (settings.staffCode || "") : (settings.adminKey || ""); }
@@ -2344,7 +2422,9 @@ el("role-chips").addEventListener("click", (e) => {
   applyRoleUI();
 });
 el("btn-save-settings").onclick = () => {
+  const prevKey = settings.apiKey;
   persistSettings();
+  if (prevKey !== settings.apiKey) { settings.aiBillingBlocked = false; saveSettings(settings); updateConversionModeStatus(); }
   showStatus("settings-status", "ok", "저장되었습니다." + (settings.apiKey ? "" : " (키가 비어 있어 AI 정리는 동작하지 않습니다)"));
 };
 el("btn-save-settings2").onclick = async () => {
@@ -2686,11 +2766,12 @@ async function flushSheetQueue() {
     // (구버전에서 쌓였을 수 있는 대기 삭제 목록도 시트로 보내지 않고 비운다)
     if (pendingDeletes().length) localStorage.setItem(LS_DELETES, "[]");
     for (const r of records) {
+      if (r.reviewPending) continue; // AI 초안은 검토 전 동기화 금지
       if (r.syncedAt && r.syncedAt >= (r.updatedAt || r.createdAt)) continue; // 이미 최신 상태로 전송됨
       if (await sheetSync(r, "upsert")) sent++;
     }
     const stillPending = pendingDeletes().length > 0 ||
-      records.some(r => !r.syncedAt || r.syncedAt < (r.updatedAt || r.createdAt));
+      records.some(r => !r.reviewPending && (!r.syncedAt || r.syncedAt < (r.updatedAt || r.createdAt)));
     settings.lastSyncAt = Date.now();
     settings.lastSyncOk = !stillPending;
     saveSettings(settings);
@@ -3005,6 +3086,19 @@ async function checkShared() {
       if (t) el("transcript").value = t;
       await cache.delete("./shared-text");
     }
+    if (pendingAudio && settings.conversionMode === "auto") {
+      const file = pendingAudio;
+      const note = el("transcript").value.trim();
+      const id = await inboxAdd(file, callerFromFilename(file.name), note);
+      clearPendingAudio(); el("transcript").value = "";
+      show("list");
+      enqueueInboxConversions([id], true);
+      showToast("🎙 공유된 녹음이 자동변환 대기열에 들어갔습니다.");
+      return;
+    }
+    if (!pendingAudio && el("transcript").value.trim() && settings.conversionMode === "auto") {
+      el("btn-ai").click(); return;
+    }
     if (pendingAudio || el("transcript").value.trim()) {
       el("share-modal-desc").textContent = pendingAudio
         ? `"${pendingAudio.name}" 녹음을 AI가 받아쓰고 상담 카드로 정리할까요?`
@@ -3189,6 +3283,12 @@ window.__nativeShareEnd = async () => {
     const caller = (callerInfo && (callerInfo.phone || callerInfo.contactName)) ? callerInfo : callerFromFilename(file.name);
     // 무조건 대기함에 먼저 보관 — 편집 중이던 내용이나 이전 녹음을 절대 덮어쓰지 않는다
     justReceivedId = await inboxAdd(file, caller);
+    if (settings.conversionMode === "auto") {
+      const id = justReceivedId; justReceivedId = null;
+      enqueueInboxConversions([id], true);
+      showToast("🎙 새 녹음이 도착해 자동 AI 변환 대기열에 등록했습니다.");
+      return;
+    }
     const who = (caller && (caller.phone || caller.contactName)) || file.name;
     el("share-modal-desc").textContent = `"${who}" 통화 녹음이 도착했어요. 지금 AI로 정리할까요?\n(나중에 정리 대기함에서 골라도 됩니다)`;
     el("share-modal").classList.remove("hidden");
