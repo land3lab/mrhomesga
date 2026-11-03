@@ -1748,16 +1748,17 @@ async function inboxRefresh() {
 function renderInbox() {
   const panel = el("inbox-panel"), list = el("inbox-list");
   if (!panel) return;
-  if (!inboxItems.length) { panel.classList.add("hidden"); list.innerHTML = ""; return; }
+  if (!inboxItems.length) { panel.classList.add("hidden"); list.innerHTML = ""; selectedInboxIds.clear(); updateInboxSelectLabel(); return; }
   el("inbox-count").textContent = `${inboxItems.length}건`;
   list.innerHTML = inboxItems.map(it => {
     const who = it.phone || it.contactName || it.name || "통화 녹음";
     const sub = `${fmtDate(it.receivedAt)} · ${(it.size / 1048576).toFixed(1)}MB`;
     const review = records.some(r => r.sourceInboxId === it.id && r.reviewPending);
+    const confirmed = records.some(r => r.sourceInboxId === it.id && !r.reviewPending);
     return `<div class="inbox-row">
-      <input type="checkbox" class="inbox-pick" data-id="${esc(it.id)}" ${review ? "disabled" : ""} ${selectedInboxIds.has(it.id) ? "checked" : ""} aria-label="이 통화 선택" style="width:20px;height:20px;flex:none;accent-color:var(--accent)">
-      <div class="inbox-info"><b>${esc(who)}</b><span>${esc(sub)}${review ? " · AI 변환 완료 (검토 필요)" : ""}</span></div>
-      <button class="btn primary inbox-go" data-id="${esc(it.id)}">${review ? "카드 확인" : "직접 정리"}</button>
+      <input type="checkbox" class="inbox-pick" data-id="${esc(it.id)}" ${review || confirmed ? "disabled" : ""} ${selectedInboxIds.has(it.id) ? "checked" : ""} aria-label="이 통화 선택" style="width:20px;height:20px;flex:none;accent-color:var(--accent)">
+      <div class="inbox-info"><b>${esc(who)}</b><span>${esc(sub)}${review ? " · AI 변환 완료 (검토 필요)" : confirmed ? " · 카드 저장 완료 (원본 보관)" : ""}</span></div>
+      <button class="btn primary inbox-go" data-id="${esc(it.id)}">${review ? "카드 확인" : confirmed ? "저장된 카드" : "직접 정리"}</button>
       <button class="btn inbox-del" data-id="${esc(it.id)}" aria-label="이 녹음 삭제">✕</button>
     </div>`;
   }).join("");
@@ -1786,7 +1787,7 @@ async function inboxDelete(id) {
   await inboxRefresh();
 }
 async function inboxLoadToForm(id) {
-  const reviewRecord = records.find(r => r.sourceInboxId === id && r.reviewPending);
+  const reviewRecord = records.find(r => r.sourceInboxId === id);
   if (reviewRecord) { guardLeave(() => openEdit(reviewRecord.id)); return; }
   let rec; try { rec = await idbGet(id); } catch {}
   if (!rec || !rec.blob) { showStatus("ai-status", "err", "녹음을 불러오지 못했습니다 — 다시 시도해 주세요."); await inboxRefresh(); return; }
@@ -1834,6 +1835,7 @@ var SHORT_CALL_SEC = 10; // 이 값(초) 미만의 아주 짧은 통화는 자�
 // 큰 녹음 파일은 Gemini Files API로 먼저 업로드하고, 그 파일을 "참조"만 해서 정리 요청을 보낸다.
 // multipart 요청으로 업로드하여 브라우저/웹뷰에서 업로드 응답 헤더를 읽을 필요가 없다.
 async function uploadAudioToGemini(file, apiKey, mimeType) {
+  if (settings.aiBillingBlocked) throw new Error("BILLING_PAUSED");
   const base = "https://generativelanguage.googleapis.com";
   const mime = mimeType;
   const boundary = "maetong" + Date.now() + Math.random().toString(36).slice(2);
@@ -1849,7 +1851,8 @@ async function uploadAudioToGemini(file, apiKey, mimeType) {
   } catch { throw new Error("네트워크 오류 — 인터넷 연결을 확인해 주세요."); }
   if (!res.ok) {
     let emsg = ""; try { emsg = (await res.json()).error?.message || ""; } catch {}
-    throw new Error(`녹음 파일 업로드 실패 (HTTP ${res.status})` + (emsg ? ": " + emsg.slice(0, 160) : ""));
+    if (res.status === 402) { settings.aiBillingBlocked = true; saveSettings(settings); updateConversionModeStatus(); }
+    throw new Error(`녹음 파일 업로드 실패 (HTTP ${res.status})` + (emsg ? ": " + emsg.slice(0, 200) : ""));
   }
   const f = (await res.json()).file;
   if (!f || !f.name) throw new Error("업로드 응답이 올바르지 않습니다.");
@@ -2127,6 +2130,7 @@ function doSave() {
     };
     saved.fields = fields; saved.transcript = transcript; saved.updatedAt = now;
     if (saved.reviewPending) { saved.reviewPending = false; reviewSourceId = saved.sourceInboxId || null; }
+    if (reviewSourceId) lastSaveSnapshot.prevReviewPending = true;
   } else {
     isNew = true;
     saved = { id: "r" + now + Math.random().toString(36).slice(2, 7), createdAt: now, updatedAt: now, fields, transcript };
@@ -2135,8 +2139,7 @@ function doSave() {
   }
   saveRecords(records);
   if (reviewSourceId) {
-    idbDel(reviewSourceId).catch(() => {});
-    inboxItems = inboxItems.filter(x => x.id !== reviewSourceId);
+    // 원본 녹음은 복구와 추후 확인을 위해 대기함에 남기며 명시적 삭제만 허용한다.
     selectedInboxIds.delete(reviewSourceId);
     renderInbox();
   }
@@ -3307,12 +3310,12 @@ function updateInboxSelectLabel() {
   const button = el("inbox-convert-selected");
   if (!button) return;
   const ready = inboxItems.filter(x => selectedInboxIds.has(x.id) &&
-    !records.some(r => r.sourceInboxId === x.id && r.reviewPending));
+    !records.some(r => r.sourceInboxId === x.id));
   button.textContent = "선택한 녹음 AI 변환 (" + ready.length + "건)";
   button.disabled = ready.length === 0 || !!settings.aiBillingBlocked;
 }
 el("inbox-select-all").onclick = () => {
-  const available = inboxItems.filter(x => !records.some(r => r.sourceInboxId === x.id && r.reviewPending));
+  const available = inboxItems.filter(x => !records.some(r => r.sourceInboxId === x.id));
   const allSelected = available.length > 0 && available.every(x => selectedInboxIds.has(x.id));
   available.forEach(x => allSelected ? selectedInboxIds.delete(x.id) : selectedInboxIds.add(x.id));
   renderInbox();
@@ -3332,7 +3335,7 @@ function enqueueInboxConversions(ids, automatic) {
     return;
   }
   ids.forEach(id => {
-    if (!id || records.some(r => r.sourceInboxId === id && r.reviewPending) ||
+    if (!id || records.some(r => r.sourceInboxId === id) ||
       conversionTasks.some(task => task.id === id)) return;
     conversionTasks.push({ id: id, automatic: automatic });
   });
@@ -3340,7 +3343,7 @@ function enqueueInboxConversions(ids, automatic) {
 }
 
 async function convertInboxRecording(id) {
-  const previous = records.find(r => r.sourceInboxId === id && r.reviewPending);
+  const previous = records.find(r => r.sourceInboxId === id);
   if (previous) return previous;
   const rec = await idbGet(id);
   if (!rec || !rec.blob) throw new Error("대기함의 녹음 파일을 찾을 수 없습니다.");
