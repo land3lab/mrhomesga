@@ -2019,6 +2019,7 @@ function friendlyAiError(err) {
     settings.aiBillingBlocked = true;
     saveSettings(settings);
     updateConversionModeStatus();
+    updateInboxSelectLabel();
     return { friendly: "Gemini 선불 크레딧이 소진되어 AI 변환을 중지했습니다. ⚙️ 설정 → 변환 모드에서 결제 잔액을 확인하고 충전 후 '변환 재개'를 누르세요. 모델 변경이나 단순 재시도로 해결되지 않습니다.", detail: msg };
   }
   if (/HTTP 429|RESOURCE_EXHAUSTED|quota exceeded/i.test(msg)) {
@@ -2191,8 +2192,9 @@ function undoLastSave() {
       rec.transcript = snap.prevTranscript;
       rec.updatedAt = snap.prevUpdatedAt;
       rec.syncedAt = 0; // 되돌린 내용도 시트에 다시 반영되어야 하므로 미전송 상태로
+      if (snap.prevReviewPending) rec.reviewPending = true;
       saveRecords(records);
-      if (hasSheet) flushSheetQueue();
+      if (hasSheet && !rec.reviewPending) flushSheetQueue();
     }
   }
   lastSaveSnapshot = null;
@@ -2391,6 +2393,7 @@ el("btn-resume-conversion").onclick = () => {
   settings.aiBillingBlocked = false;
   saveSettings(settings);
   updateConversionModeStatus();
+  updateInboxSelectLabel();
   showToast("Gemini 변환을 다시 사용할 수 있습니다. (잔액이 부족하면 다시 중지됩니다.)");
 };
 /* ── 역할(사장/직원)과 접근 키 ── */
@@ -3250,7 +3253,8 @@ function refreshConnSummary() {
     n.textContent = text;
     n.className = "v" + (cls ? " " + cls : "");
   };
-  setItem("sum-ai", aiOn ? "연결됨" : "키 없음", aiOn ? "ok" : "warn");
+  setItem("sum-ai", settings.aiBillingBlocked ? "크레딧 부족 (HTTP 402)" : aiOn ? "API 키 등록됨" : "키 없음",
+    settings.aiBillingBlocked ? "err" : aiOn ? "ok" : "warn");
   setItem("sum-sheet", !sheetOn ? "미연결" : (settings.lastSheetTestOk === false ? "오류" : "연결됨"),
     !sheetOn ? "warn" : (settings.lastSheetTestOk === false ? "err" : "ok"));
   const dst = detectStatus();
