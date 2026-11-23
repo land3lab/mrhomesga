@@ -2389,6 +2389,15 @@ el("btn-save-conversion-mode").onclick = () => {
   updateConversionModeStatus();
   showToast(settings.conversionMode === "auto" ? "새로 도착하는 녹음을 자동 AI 변환합니다. (요금 발생 가능)" : "선택변환 모드로 변경했습니다.");
 };
+// 드롭다운에서 고르는 즉시 적용 — [저장] 버튼을 못 눌러 '선택변환'에 머무는 실수를 막는다
+el("conversion-mode").onchange = () => {
+  settings.conversionMode = el("conversion-mode").value === "auto" ? "auto" : "select";
+  saveSettings(settings);
+  updateConversionModeStatus();
+  showToast(settings.conversionMode === "auto"
+    ? "✅ 자동변환 켜짐 — 이제 전화가 끝나면 자동으로 상담카드가 만들어집니다. (요금 발생 가능)"
+    : "선택변환으로 변경했습니다 — 원하는 통화만 골라 변환합니다.");
+};
 el("btn-resume-conversion").onclick = () => {
   settings.aiBillingBlocked = false;
   saveSettings(settings);
