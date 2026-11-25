@@ -514,6 +514,11 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
     </div>
     <div class="btnbar"><button class="btn" id="btn-status-check">🔍 상태 자동 점검</button></div>
     <div class="status" id="status-check-status" role="status" aria-live="polite"></div>
+    <div class="row" style="align-items:center; gap:8px; margin-top:10px; border-top:1px solid var(--line); padding-top:10px">
+      <span class="hint" style="margin:0; flex:1">앱 버전 <b id="app-version">—</b> · 최신 코드는 자동으로 받아옵니다</span>
+      <button class="btn" id="btn-force-update" style="flex:0 0 auto">🔄 지금 최신으로</button>
+    </div>
+    <div class="status" id="update-status" role="status" aria-live="polite"></div>
   </div>
 
   <div class="settings-group-title">기본 설정</div>
@@ -1083,6 +1088,7 @@ function __scopes__() {
 "use strict";
 
 /* ══════════════ 저장소 ══════════════ */
+const APP_VERSION = "2026.11.25-1"; // 배포 버전 (설정에 표시 — 업데이트 확인용)
 const LS_RECORDS = "callnote_records";
 const LS_SETTINGS = "callnote_settings";
 const LS_DELETES = "callnote_pending_deletes"; // 시트에 아직 반영 못 한 삭제 id 목록
@@ -3664,8 +3670,35 @@ if (el("onboard-modal").classList.contains("hidden")) maybeShowLicenseReminder()
 refreshLicense();
 flushSheetQueue().then(() => sheetPull(false));
 
+// 버전 표시 + 자동 업데이트 (서비스워커가 새 코드를 받으면 조용히 새로고침)
+(function () {
+  const v = el("app-version"); if (v) v.textContent = APP_VERSION;
+})();
+el("btn-force-update").onclick = async () => {
+  showStatus("update-status", "info", "⏳ 최신 버전을 받아오는 중…");
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); }
+  } catch {}
+  showStatus("update-status", "ok", "✅ 최신으로 새로고침합니다…");
+  setTimeout(() => location.reload(), 400);
+};
+
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  // 이미 앱이 서비스워커의 제어를 받고 있었다면, 새 버전이 적용될 때 한 번만 조용히 새로고침
+  if (navigator.serviceWorker.controller) {
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) return; refreshing = true; location.reload();
+    });
+  }
+  navigator.serviceWorker.register("sw.js").then(reg => {
+    reg.update();                                   // 열자마자 새 버전 확인
+    setInterval(() => reg.update(), 60 * 60 * 1000); // 오래 켜둬도 1시간마다 확인
+  }).catch(() => {});
 }
 
 /* ══════════════ 가상 키보드 대응: 하단 고정바를 키보드 위로 띄운다 ══════════════ */
