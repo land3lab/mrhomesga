@@ -220,6 +220,10 @@ button.icon-btn {
   color: inherit; text-decoration: none; cursor: pointer; line-height: 1; }
 .ract.call { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
 .ract.kko { background: #fee500; color: #191600; border-color: transparent; }
+.ract.push { background: var(--accent); color: #fff; border-color: transparent; }
+.rec-sheet { margin-top: 8px; }
+.sheet-on { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 700;
+  color: var(--accent-ink); background: var(--accent-soft); padding: 5px 10px; border-radius: 8px; }
 .interim { color: var(--muted); font-size: 13.5px; font-style: italic; min-height: 1.2em; }
 details.guide { border-top: 1px solid var(--line); padding: 10px 0 2px; }
 details.guide summary { cursor: pointer; font-weight: 700; font-size: 14.5px; padding: 8px 0; min-height: 24px; }
@@ -566,8 +570,9 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20
       <option value="auto">자동변환 — 새로 수신된 녹음 자동 AI 정리</option>
     </select>
     <p class="hint">자동변환에서는 새 녹음이 매통이에 도착할 때 Google Gemini로 전송됩니다. API 사용량·요금이 발생할 수 있으며, 앱이 종료·절전 상태이면 즉시 처리되지 않을 수 있습니다.</p>
-    <p class="hint"><b>자동변환</b>은 묻지 않고 바로 상담카드를 만들어 <b>저장</b>하고, 매물장(구글시트)이 연결돼 있으면 <b>시트에도 바로 전송</b>합니다.
-      <b>선택변환</b>에서 만든 카드는 '검토 필요'로 임시 보관되며 [저장 완료]로 확인한 후에 시트로 전송됩니다.</p>
+    <p class="hint"><b>자동변환</b>은 묻지 않고 바로 상담카드를 만들어 <b>앱 목록에 저장</b>합니다(부재중·내용 없는 통화는 저장하지 않음).
+      매물장(사무실 구글시트)에 올릴지는 자동으로 보내지 않고, 목록에서 카드마다 <b>[🗂 매물장에 올리기]</b>로 직접 고릅니다.
+      <b>선택변환</b>에서 만든 카드는 '검토 필요'로 임시 보관되며 [저장 완료]로 확인한 뒤, 역시 목록에서 매물장에 올립니다.</p>
     <div class="btnbar"><button class="btn primary" id="btn-save-conversion-mode" type="button">변환 모드 저장</button></div>
     <div class="status" id="conversion-mode-status" role="status" aria-live="polite"></div>
     <div class="status err" id="ai-billing-warning" role="alert">
@@ -1088,7 +1093,7 @@ function __scopes__() {
 "use strict";
 
 /* ══════════════ 저장소 ══════════════ */
-const APP_VERSION = "2026.11.25-2"; // 배포 버전 (설정에 표시 — 업데이트 확인용)
+const APP_VERSION = "2026.11.26-1"; // 배포 버전 (설정에 표시 — 업데이트 확인용)
 const LS_RECORDS = "callnote_records";
 const LS_SETTINGS = "callnote_settings";
 const LS_DELETES = "callnote_pending_deletes"; // 시트에 아직 반영 못 한 삭제 id 목록
@@ -1342,7 +1347,18 @@ function recCardHtml(r) {
       ${f.summary ? `<div class="sum">${esc(f.summary)}</div>` : ""}
       ${todo.length ? `<div class="todo">☑️ ${esc(todo[0])}${todo.length > 1 ? ` 외 ${todo.length - 1}건` : ""}</div>` : ""}
       ${!shareMode ? contactActionsHtml(r) : ""}
+      ${!shareMode ? sheetPushHtml(r) : ""}
     </div>`;
+}
+// 🗂 "매물장에 올리기" — 기록은 일단 앱에만 저장되고, 사장님/직원이 카드마다 눌러 사무실 시트로 올린다.
+function sheetPushHtml(r) {
+  if (r.reviewPending) return ""; // 검토 전 초안은 먼저 저장 완료부터
+  if (!(settings.sheetUrl || "").trim()) return ""; // 시트 미연결이면 올릴 곳이 없음
+  if (r.pushToSheet) {
+    const synced = r.syncedAt && r.syncedAt >= (r.updatedAt || r.createdAt);
+    return `<div class="rec-sheet"><span class="sheet-on">🗂 매물장 ${synced ? "올림 ✓" : "올리는 중…"}</span></div>`;
+  }
+  return `<div class="rec-sheet"><button class="ract push" data-push="${r.id}" onclick="event.stopPropagation()">🗂 매물장에 올리기</button></div>`;
 }
 
 function renderList() {
@@ -1401,6 +1417,24 @@ function renderList() {
     };
   });
   wireMsgButtons(box); // 💛 카톡·공유 버튼
+  box.querySelectorAll("[data-push]").forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const r = records.find(x => x.id === btn.dataset.push);
+      if (!r) return;
+      r.pushToSheet = true;
+      r.syncedAt = 0; // 전송 대상으로 표시
+      saveRecords(records);
+      renderList();
+      if (!(settings.sheetUrl || "").trim()) { showToast("⚙️ 먼저 설정에서 매물장 시트를 연결해 주세요."); return; }
+      if (navigator.onLine === false) { showToast("⏳ 오프라인 — 인터넷 연결되면 매물장에 자동 전송됩니다."); return; }
+      showToast("🗂 매물장에 올리는 중…");
+      await flushSheetQueue();
+      const ok = r.syncedAt && r.syncedAt >= (r.updatedAt || r.createdAt);
+      showToast(ok ? "✅ 매물장(사무실 시트)에 올렸습니다." : "⚠ 전송 대기 — 인터넷 연결 후 자동 전송됩니다.");
+      renderList();
+    };
+  });
 }
 
 /* ══════════════ 편집 폼 ══════════════ */
@@ -1512,7 +1546,7 @@ function openEdit(id) {
   hasUnsavedChanges = false;
   checkDraftRecovery();
   show("edit");
-  if (rec && rec.reviewPending) showStatus("ai-status", "info", "AI 변환 초안입니다. 통화 내용과 매물 정보를 확인하고 [저장 완료]를 눌러야 구글시트에 전송됩니다.");
+  if (rec && rec.reviewPending) showStatus("ai-status", "info", "AI 변환 초안입니다. 통화 내용과 매물 정보를 확인하고 [저장 완료]를 누른 뒤, 목록에서 [🗂 매물장에 올리기]로 사무실 시트에 올립니다.");
 }
 
 /* ══════════════ 임시저장 (작성 중 기록 유실 방지) ══════════════ */
@@ -1914,7 +1948,8 @@ const PROMPT = `당신은 한국 부동산 중개사무소의 통화 기록 정�
   반드시 "YYYY-MM-DD" 형식으로 적으세요 (달력 입력칸에 쓰이므로 이 형식이 아니면 무시됩니다).
   "다음 주", "이번 달 말"처럼 정확한 날짜가 아니면 비워두고, 대신 contractNotes나 followUps에 적으세요.
 - documents(구비서류): 계약에 필요한 서류(등기부등본, 인감증명 등)를 언급했다면 짧게.
-- contractNotes(계약 관련 메모): 계약 조건, 특약사항 등 계약진행 관련 기타 메모.`;
+- contractNotes(계약 관련 메모): 계약 조건, 특약사항 등 계약진행 관련 기타 메모.
+- noContent: 통화가 연결되지 않았거나(부재중·신호음만·자동응답·음성사서함), 무음이거나, 실제 대화 내용이 전혀 없으면 true. 정상적인 통화 내용이 있으면 false.`;
 
 const PROMPT_AUDIO_EXTRA = `
 - transcript: 첨부된 통화 녹음 전체를 한국어로 받아쓰기하세요. 화자가 구분되면 줄마다 "중개사:" / "고객:"을 붙이세요.`;
@@ -1923,6 +1958,7 @@ function geminiSchema(withTranscript) {
   const p = {
     category: { type: "STRING", enum: ["매물접수", "손님문의", "계약진행", "기타"] },
     summary: { type: "STRING" },
+    noContent: { type: "BOOLEAN" },
     name: { type: "STRING" }, phone: { type: "STRING" }, role: { type: "STRING" },
     propertyType: { type: "STRING" }, dealType: { type: "STRING" }, address: { type: "STRING" },
     priceSale: { type: "STRING" }, priceDeposit: { type: "STRING" }, priceMonthly: { type: "STRING" },
@@ -2167,19 +2203,23 @@ function doSave() {
 }
 async function finishSaveToast(saved, isNew) {
   const hasSheet = !!(settings.sheetUrl || "").trim();
-  if (!hasSheet) {
-    showToastWithUndo("✅ 상담 기록이 휴대폰에 저장되었습니다.", isNew);
+  // 저장만으로는 시트에 올리지 않는다 — 매물장 등록은 목록의 [🗂 매물장에 올리기]로 직접 선택
+  if (!saved.pushToSheet) {
+    showToastWithUndo(hasSheet
+      ? "✅ 저장되었습니다. 매물장(사무실 시트)에 올리려면 목록에서 [🗂 매물장에 올리기]를 누르세요."
+      : "✅ 상담 기록이 휴대폰에 저장되었습니다.", isNew);
     return;
   }
+  // 이미 매물장에 올린(또는 시트에서 받아온) 기록의 수정 → 시트에도 반영
   if (navigator.onLine === false) {
-    showToastWithUndo("✅ 휴대폰에 저장되었습니다.\n⏳ 인터넷 연결 후 매물장에 자동 전송됩니다.", isNew);
+    showToastWithUndo("✅ 저장되었습니다.\n⏳ 인터넷 연결 후 매물장에 자동 반영됩니다.", isNew);
     return;
   }
   await flushSheetQueue();
   const synced = saved.syncedAt && saved.syncedAt >= (saved.updatedAt || saved.createdAt);
   showToastWithUndo(
-    synced ? "✅ 상담 기록이 저장되었습니다.\n☁ 사무실 매물장에도 전송되었습니다."
-           : "✅ 휴대폰 저장 완료\n⚠ 매물장 전송은 재시도 예정입니다.",
+    synced ? "✅ 저장되었습니다.\n☁ 사무실 매물장에도 반영되었습니다."
+           : "✅ 저장 완료\n⚠ 매물장 반영은 재시도 예정입니다.",
     isNew);
 }
 function showToastWithUndo(msg, isNew) {
@@ -2555,6 +2595,7 @@ function sheetRowToRecord(row) {
     createdAt: created,
     updatedAt: updated,
     syncedAt: Date.now(), // 이미 시트에 있는 기록이므로 다시 올릴 필요 없음
+    pushToSheet: true,     // 시트에서 받아온 매물은 매물장 소속 — 앱에서 수정하면 다시 반영
     transcript: g("통화내용"),
     fields: {
       category: ["매물접수", "손님문의", "계약진행", "기타"].includes(cat) ? cat : "기타",
@@ -2789,11 +2830,12 @@ async function flushSheetQueue() {
     if (pendingDeletes().length) localStorage.setItem(LS_DELETES, "[]");
     for (const r of records) {
       if (r.reviewPending) continue; // AI 초안은 검토 전 동기화 금지
+      if (!r.pushToSheet) continue;  // [매물장에 올리기]로 고른 기록만 전송 — 나머지는 앱 목록에만 보관
       if (r.syncedAt && r.syncedAt >= (r.updatedAt || r.createdAt)) continue; // 이미 최신 상태로 전송됨
       if (await sheetSync(r, "upsert")) sent++;
     }
     const stillPending = pendingDeletes().length > 0 ||
-      records.some(r => !r.reviewPending && (!r.syncedAt || r.syncedAt < (r.updatedAt || r.createdAt)));
+      records.some(r => r.pushToSheet && !r.reviewPending && (!r.syncedAt || r.syncedAt < (r.updatedAt || r.createdAt)));
     settings.lastSyncAt = Date.now();
     settings.lastSyncOk = !stillPending;
     saveSettings(settings);
@@ -2981,7 +3023,7 @@ el("btn-sheet-all").onclick = async () => {
   }
   const btn = el("btn-sheet-all");
   btn.disabled = true;
-  records.forEach(r => { r.syncedAt = 0; }); // 전부 미전송 상태로 되돌리고
+  records.forEach(r => { r.pushToSheet = true; r.syncedAt = 0; }); // 전부 매물장 대상으로 표시 후 미전송 상태로 되돌리고
   showStatus("sheet-status", "info", `⏳ ${records.length}건 전송 중…`);
   const sent = await flushSheetQueue(); //   자동 전송 루틴으로 재전송
   btn.disabled = false;
@@ -3401,12 +3443,22 @@ async function convertInboxRecording(id, autoSave) {
   });
   if (!fields.phone && rec.phone) fields.phone = rec.phone;
   if (!fields.name && rec.contactName) fields.name = rec.contactName;
+  // 부재중·내용 없는 통화는 제외 — 자동변환일 때는 카드를 만들지 않고 대기함 녹음도 치운다
+  const emptyTalk = !(result.transcript || "").trim();
+  const noReal = result.noContent === true ||
+    (emptyTalk && !(result.summary || "").trim() && !fields.name && !fields.address);
+  if (autoSave && noReal) {
+    try { await idbDel(id); } catch {}
+    selectedInboxIds.delete(id);
+    await inboxRefresh();
+    return { skipped: true };
+  }
   const now = Date.now();
   const draft = {
     id: "r" + now + Math.random().toString(36).slice(2, 7),
     createdAt: rec.receivedAt || now, updatedAt: now,
     fields: fields, transcript: result.transcript || "",
-    reviewPending: !autoSave, sourceInboxId: id
+    reviewPending: !autoSave, pushToSheet: false, sourceInboxId: id
   };
   records.push(draft);
   try { saveRecords(records); }
@@ -3415,14 +3467,13 @@ async function convertInboxRecording(id, autoSave) {
   selectedInboxIds.delete(id);
   await inboxRefresh();
   renderList();
-  // 자동변환은 검토 없이 바로 저장 — 시트가 연결돼 있으면 매물장에도 즉시 전송
-  if (autoSave && !draft.reviewPending && (settings.sheetUrl || "").trim()) flushSheetQueue();
+  // 자동변환은 일단 앱 목록에만 저장 — 매물장(시트)에 올릴지는 목록 카드의 [🗂 매물장에 올리기]로 직접 선택
   return draft;
 }
 async function drainConversionQueue() {
   if (conversionBusy) return;
   conversionBusy = true;
-  let completed = 0, autoSaved = 0;
+  let completed = 0, autoSaved = 0, skipped = 0;
   try {
     while (conversionTasks.length) {
       const task = conversionTasks.shift();
@@ -3434,7 +3485,8 @@ async function drainConversionQueue() {
         ((item && (item.phone || item.contactName || item.name)) || "통화 녹음") +
         " · 남은 " + conversionTasks.length + "건");
       try {
-        await convertInboxRecording(task.id, autoSave);
+        const res = await convertInboxRecording(task.id, autoSave);
+        if (res && res.skipped) { skipped++; continue; }
         completed++;
         if (autoSave) autoSaved++;
       } catch (err) {
@@ -3450,14 +3502,18 @@ async function drainConversionQueue() {
   } finally {
     conversionBusy = false;
     updateInboxSelectLabel();
+    const skipMsg = skipped ? ` (부재중·내용 없는 통화 ${skipped}건 제외)` : "";
     if (completed) {
       const allAuto = autoSaved === completed;
       showStatus("inbox-status", "ok", allAuto
-        ? "✅ " + completed + "건 자동 정리·저장 완료" + ((settings.sheetUrl || "").trim() ? " (매물장에도 전송됨)" : "")
-        : "✅ " + completed + "건 변환 완료. 목록에서 '검토 필요' 카드를 확인한 뒤 저장해 주세요.");
+        ? "✅ " + completed + "건 자동 정리·저장 완료 — 목록에서 [🗂 매물장에 올리기]로 시트에 올릴 카드를 고르세요." + skipMsg
+        : "✅ " + completed + "건 변환 완료. 목록에서 '검토 필요' 카드를 확인한 뒤 저장해 주세요." + skipMsg);
       showToast(allAuto
-        ? "✅ 상담카드 " + completed + "건 자동 정리·저장 완료"
+        ? "✅ 상담카드 " + completed + "건 저장 완료" + skipMsg
         : "✅ AI 변환 " + completed + "건 완료 — 상담카드 확인 필요");
+    } else if (skipped) {
+      showStatus("inbox-status", "ok", "📵 부재중·내용 없는 통화 " + skipped + "건은 저장하지 않았습니다.");
+      showToast("📵 부재중·내용 없는 통화 " + skipped + "건 제외");
     }
   }
 }
