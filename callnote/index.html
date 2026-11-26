@@ -1093,7 +1093,7 @@ function __scopes__() {
 "use strict";
 
 /* ══════════════ 저장소 ══════════════ */
-const APP_VERSION = "2026.11.26-1"; // 배포 버전 (설정에 표시 — 업데이트 확인용)
+const APP_VERSION = "2026.11.26-2"; // 배포 버전 (설정에 표시 — 업데이트 확인용)
 const LS_RECORDS = "callnote_records";
 const LS_SETTINGS = "callnote_settings";
 const LS_DELETES = "callnote_pending_deletes"; // 시트에 아직 반영 못 한 삭제 id 목록
@@ -3443,12 +3443,13 @@ async function convertInboxRecording(id, autoSave) {
   });
   if (!fields.phone && rec.phone) fields.phone = rec.phone;
   if (!fields.name && rec.contactName) fields.name = rec.contactName;
-  // 부재중·내용 없는 통화는 제외 — 자동변환일 때는 카드를 만들지 않고 대기함 녹음도 치운다
-  const emptyTalk = !(result.transcript || "").trim();
-  const noReal = result.noContent === true ||
-    (emptyTalk && !(result.summary || "").trim() && !fields.name && !fields.address);
+  // 부재중·내용 없는 통화만 제외한다. 판단 기준은 '실제 대화 내용(받아쓰기)'이다 —
+  // 이름·번호는 파일명/통화기록에서 들어오는 메타정보라 내용 유무 판단에 쓰지 않는다.
+  // 실제 대화가 조금이라도 있으면(받아쓰기 ≥ 8자) 반드시 저장하고,
+  // 건너뛰더라도 녹음은 대기함에 그대로 남겨 복구할 수 있게 한다(절대 자동 삭제하지 않음).
+  const talkLen = (result.transcript || "").trim().length;
+  const noReal = result.noContent === true && talkLen < 8;
   if (autoSave && noReal) {
-    try { await idbDel(id); } catch {}
     selectedInboxIds.delete(id);
     await inboxRefresh();
     return { skipped: true };

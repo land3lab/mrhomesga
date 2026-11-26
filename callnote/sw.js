@@ -1,4 +1,4 @@
-const CACHE = "callnote-v4";
+const CACHE = "callnote-v5";
 const SHARE_CACHE = "callnote-share";
 const APP_SHELL = ["./", "./index.html", "./manifest.webmanifest"];
 
