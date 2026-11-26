@@ -46,12 +46,14 @@ object NotifyHelper {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_call)
             .setContentTitle(if (who != null) "$who 통화 녹음이 저장됐어요" else "통화 녹음이 저장됐어요")
-            .setContentText("탭하면 AI 정리 여부를 선택합니다")
+            .setContentText("자동으로 상담카드를 만드는 중이에요")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("$fileName\n탭하면 통화노트가 열리고, AI로 정리할지 선택할 수 있어요.")
+                    .bigText("$fileName\n자동으로 통화노트가 열려 AI 정리·저장됩니다. (안 열리면 탭하세요)")
             )
             .setContentIntent(pending)
+            .setFullScreenIntent(pending, true) // 통화 끝나면 앱이 스스로 열려 자동 정리 (탭 불필요)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
@@ -60,6 +62,12 @@ object NotifyHelper {
             nm.notify(NOTIFICATION_ID, notification)
         } catch (_: SecurityException) {
             // 알림 권한 미허용 — 앱을 열어 권한을 허용해야 한다
+        }
+        // 전체화면 인텐트가 막히는 기종을 대비해 액티비티 직접 실행도 시도 (실행 중 포그라운드 서비스가 있어 성공률↑)
+        try {
+            context.startActivity(openIntent)
+        } catch (_: Exception) {
+            // 백그라운드 실행 제한 등 — 알림(전체화면/탭)으로 대체
         }
     }
 }
