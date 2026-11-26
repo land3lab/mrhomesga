@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Base64
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -15,6 +16,7 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
@@ -38,6 +40,8 @@ class MainActivity : AppCompatActivity() {
     private var pendingAudio: Pair<Uri, String>? = null // (uri, 파일명) — 페이지 로드 후 주입
     private var pendingCall: CallInfo? = null // 방금 통화의 상대 번호/이름 — 녹음과 함께 주입
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private var lastHandledUri: String? = null // 전체화면+직접실행 동시 진입 시 같은 녹음 중복 처리 방지
+    private var lastHandledAt: Long = 0
 
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -115,6 +119,38 @@ class MainActivity : AppCompatActivity() {
         MonitorService.start(this) // "매통이 실행 중" 지속 알림 + 프로세스 유지 시작
         webView.loadUrl(APP_URL)
         handleIntent(intent)
+        promptOverlayIfNeeded() // 통화 끝나면 앱이 스스로 열리도록 '다른 앱 위에 표시' 권한 안내
+    }
+
+    /** 화면이 켜져 있어도 통화 종료 후 앱이 스스로 뜨려면 '다른 앱 위에 표시'(오버레이) 권한이 필요하다. */
+    private fun promptOverlayIfNeeded() {
+        if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)) return
+        val prefs = getSharedPreferences("callnote", MODE_PRIVATE)
+        if (prefs.getBoolean("overlay_dismissed", false)) return
+        AlertDialog.Builder(this)
+            .setTitle("통화 끝나면 자동으로 열기")
+            .setMessage(
+                "통화가 끝나면 매통이가 스스로 열려 바로 정리·저장하려면 " +
+                    "'다른 앱 위에 표시' 권한이 필요합니다.\n\n" +
+                    "[설정 열기]를 누른 뒤 매통이를 켜 주세요.",
+            )
+            .setPositiveButton("설정 열기") { _, _ ->
+                try {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:$packageName"),
+                        ),
+                    )
+                } catch (_: Exception) {
+                    try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) } catch (_: Exception) {}
+                }
+            }
+            .setNegativeButton("나중에", null)
+            .setNeutralButton("다시 안 보기") { _, _ ->
+                prefs.edit().putBoolean("overlay_dismissed", true).apply()
+            }
+            .show()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -145,6 +181,10 @@ class MainActivity : AppCompatActivity() {
             // 통화 종료 알림에서 진입
             intent.action == ACTION_PROCESS_RECORDING -> {
                 val uriStr = intent.getStringExtra(EXTRA_AUDIO_URI) ?: return
+                val nowMs = System.currentTimeMillis()
+                // 전체화면 인텐트와 직접 실행이 동시에 들어와도 같은 녹음을 한 번만 처리한다
+                if (uriStr == lastHandledUri && nowMs - lastHandledAt < 15000) return
+                lastHandledUri = uriStr; lastHandledAt = nowMs
                 val name = intent.getStringExtra(EXTRA_AUDIO_NAME) ?: "통화녹음.m4a"
                 pendingAudio = Uri.parse(uriStr) to name
                 val phone = intent.getStringExtra(EXTRA_CALL_PHONE) ?: ""
