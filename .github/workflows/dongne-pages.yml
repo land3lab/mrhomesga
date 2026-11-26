@@ -56,7 +56,7 @@ jobs:
           # 통화노트 앱은 /callnote/ 하위 경로로 함께 배포 (키 주입 불필요 — 사용자가 앱 안에서 입력)
           cp -r callnote _site_build/callnote
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: _site_build
 
